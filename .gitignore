@@ -1,0 +1,12 @@
+.DS_Store
+node_modules
+.svelte-kit
+.wrangler
+dist
+build
+.env
+.env.*
+!.env.example
+worker-configuration.d.ts
+src/lib/data/demo-summary.json
+data.zip
