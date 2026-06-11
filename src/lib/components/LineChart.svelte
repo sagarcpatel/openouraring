@@ -44,7 +44,7 @@
   const width = 760;
   const margin = { top: 18, right: 18, bottom: 34, left: 48 };
   const gridCount = 4;
-  const axisBadgeWidth = 122;
+  const axisBadgeWidth = 138;
   const axisBadgeHeight = 22;
 
   let hoveredIndex: number | null = null;
