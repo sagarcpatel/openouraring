@@ -8,6 +8,13 @@
     label: string;
     color: string;
     values: ChartPoint[];
+    opacity?: number;
+    pointOpacity?: number;
+    pointRadius?: number;
+    showInLegend?: boolean;
+    showPoints?: 'always' | 'hover' | false;
+    strokeWidth?: number;
+    tooltipOnly?: boolean;
   };
 
   type HoveredPoint = {
@@ -18,36 +25,67 @@
     y: number;
   };
 
+  type BackgroundBand = {
+    from: number;
+    to: number | null;
+    color: string;
+  };
+
+  type TooltipEntry = {
+    label: string;
+    color: string;
+    value: number;
+    y: number | null;
+  };
+
   export let title = '';
   export let series: ChartSeries[] = [];
   export let height = 240;
   export let minY: number | null = null;
   export let maxY: number | null = null;
+  export let tickInterval: number | null = null;
   export let yFormatter: (value: number) => string = (value) => value.toLocaleString();
   export let xFormatter: (value: string) => string = (value) => value;
   export let showLegend = true;
+  export let hoverMode: 'point' | 'x' = 'point';
+  export let backgroundBands: BackgroundBand[] = [];
 
   const width = 760;
   const margin = { top: 18, right: 18, bottom: 34, left: 48 };
   const gridCount = 4;
-  const tooltipWidth = 190;
-  const tooltipHeight = 78;
+  const tooltipWidth = 230;
 
   let hoveredPoint: HoveredPoint | null = null;
+  let hoveredIndex: number | null = null;
 
-  $: allValues = series.flatMap((line) =>
+  $: drawableSeries = series.filter((line) => !line.tooltipOnly);
+  $: legendSeries = series.filter((line) => line.showInLegend !== false && !line.tooltipOnly);
+  $: allValues = drawableSeries.flatMap((line) =>
     line.values
       .map((point) => point.y)
       .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
   );
-  $: computedMin = minY ?? (allValues.length ? Math.min(...allValues) : 0);
-  $: computedMax = maxY ?? (allValues.length ? Math.max(...allValues) : 1);
+  $: rawMin = minY ?? (allValues.length ? Math.min(...allValues) : 0);
+  $: rawMax = maxY ?? (allValues.length ? Math.max(...allValues) : 1);
+  $: computedMin = tickInterval && minY === null ? Math.floor(rawMin / tickInterval) * tickInterval : rawMin;
+  $: computedMax = tickInterval && maxY === null ? Math.ceil(rawMax / tickInterval) * tickInterval : rawMax;
   $: ySpan = Math.max(computedMax - computedMin, 1);
-  $: ticks = Array.from({ length: gridCount + 1 }, (_, index) => computedMin + (ySpan * index) / gridCount);
+  $: ticks = tickInterval
+    ? fixedTicks(computedMin, computedMax, tickInterval)
+    : Array.from({ length: gridCount + 1 }, (_, index) => computedMin + (ySpan * index) / gridCount);
   $: firstSeries = series[0]?.values ?? [];
   $: xTicks = firstSeries.length
     ? [firstSeries[0], firstSeries[Math.floor(firstSeries.length / 2)], firstSeries[firstSeries.length - 1]]
     : [];
+  $: tooltipEntries = entriesForHover();
+  $: tooltipDay = hoverMode === 'x' && hoveredIndex !== null ? firstSeries[hoveredIndex]?.x : hoveredPoint?.point.x;
+  $: hoveredX =
+    hoverMode === 'x' && hoveredIndex !== null ? xAt(hoveredIndex, firstSeries.length) : hoveredPoint?.x ?? 0;
+  $: hoveredY =
+    hoverMode === 'x'
+      ? Math.min(...tooltipEntries.map((entry) => entry.y).filter((value): value is number => value !== null), height / 2)
+      : hoveredPoint?.y ?? height / 2;
+  $: tooltipHeight = Math.max(78, 48 + tooltipEntries.length * 18);
 
   function xAt(index: number, length: number) {
     if (length <= 1) return margin.left;
@@ -60,6 +98,19 @@
 
   function isValidValue(value: number | null | undefined): value is number {
     return typeof value === 'number' && Number.isFinite(value);
+  }
+
+  function fixedTicks(min: number, max: number, interval: number) {
+    if (interval <= 0) return [min, max];
+    const ticks: number[] = [];
+    const start = Math.ceil(min / interval) * interval;
+    const end = Math.floor(max / interval) * interval;
+    for (let value = start; value <= end + interval / 1000; value += interval) {
+      ticks.push(Number(value.toFixed(6)));
+    }
+    if (!ticks.length || ticks[0] > min) ticks.unshift(min);
+    if (ticks[ticks.length - 1] < max) ticks.push(max);
+    return [...new Set(ticks)];
   }
 
   function linePath(values: ChartPoint[]) {
@@ -81,8 +132,63 @@
     return Math.min(Math.max(y - tooltipHeight - 12, margin.top), height - margin.bottom - tooltipHeight);
   }
 
+  function pointOpacity(line: ChartSeries, point: ChartPoint) {
+    const active = isPointActive(line, point);
+    if (active) return 1;
+    if (line.showPoints === 'always') return line.pointOpacity ?? line.opacity ?? 0.5;
+    return 0;
+  }
+
+  function pointRadius(line: ChartSeries, point: ChartPoint) {
+    const radius = line.pointRadius ?? 3.8;
+    return isPointActive(line, point) ? radius + 1.3 : radius;
+  }
+
+  function isPointActive(line: ChartSeries, point: ChartPoint) {
+    if (hoverMode === 'x' && hoveredIndex !== null) return line.values[hoveredIndex] === point;
+    return hoveredPoint?.point === point && hoveredPoint?.seriesLabel === line.label;
+  }
+
+  function entriesForHover(): TooltipEntry[] {
+    if (hoverMode === 'x') {
+      if (hoveredIndex === null) return [];
+      const index = hoveredIndex;
+      return series
+        .map((line) => {
+          const point = line.values[index];
+          if (!point || !isValidValue(point.y)) return null;
+          return {
+            label: line.label,
+            color: line.color,
+            value: point.y,
+            y: line.tooltipOnly ? null : yAt(point.y)
+          };
+        })
+        .filter((entry): entry is TooltipEntry => entry !== null);
+    }
+
+    if (!hoveredPoint || !isValidValue(hoveredPoint.point.y)) return [];
+    return [
+      {
+        label: hoveredPoint.seriesLabel,
+        color: hoveredPoint.color,
+        value: hoveredPoint.point.y,
+        y: hoveredPoint.y
+      }
+    ];
+  }
+
+  function bandY(from: number, to: number | null) {
+    const bandFrom = Math.max(from, computedMin);
+    const bandTo = Math.min(to ?? computedMax, computedMax);
+    const y1 = yAt(bandTo);
+    const y2 = yAt(bandFrom);
+    return { y: y1, height: Math.max(y2 - y1, 0) };
+  }
+
   function showPoint(line: ChartSeries, point: ChartPoint, index: number) {
     if (!isValidValue(point.y)) return;
+    hoveredIndex = index;
     hoveredPoint = {
       seriesLabel: line.label,
       color: line.color,
@@ -90,6 +196,16 @@
       x: xAt(index, line.values.length),
       y: yAt(point.y)
     };
+  }
+
+  function showDay(index: number) {
+    hoveredIndex = index;
+    hoveredPoint = null;
+  }
+
+  function clearHover() {
+    hoveredIndex = null;
+    hoveredPoint = null;
   }
 </script>
 
@@ -107,6 +223,20 @@
       style={`height: ${height}px`}
       preserveAspectRatio="none"
     >
+      {#each backgroundBands as band}
+        {#if (band.to ?? computedMax) > computedMin && band.from < computedMax}
+          {@const range = bandY(band.from, band.to)}
+          <rect
+            class="background-band"
+            x={margin.left}
+            y={range.y}
+            width={width - margin.left - margin.right}
+            height={range.height}
+            fill={band.color}
+          />
+        {/if}
+      {/each}
+
       {#each ticks as tick}
         <line class="grid" x1={margin.left} x2={width - margin.right} y1={yAt(tick)} y2={yAt(tick)} />
         <text class="axis-label" x={margin.left - 10} y={yAt(tick) + 4} text-anchor="end">
@@ -114,38 +244,70 @@
         </text>
       {/each}
 
-      {#each series as line}
-        <path class="line" d={linePath(line.values)} stroke={line.color} />
+      {#each drawableSeries as line}
+        <path
+          class="line"
+          d={linePath(line.values)}
+          stroke={line.color}
+          stroke-width={line.strokeWidth ?? 3}
+          opacity={line.opacity ?? 1}
+        />
       {/each}
 
-      {#each series as line}
+      {#each drawableSeries as line}
         {#each line.values as point, index}
           {#if isValidValue(point.y)}
             {@const pointX = xAt(index, line.values.length)}
             {@const pointY = yAt(point.y)}
             <circle
               class="point"
-              class:active={hoveredPoint?.point === point && hoveredPoint?.seriesLabel === line.label}
+              class:active={isPointActive(line, point)}
               cx={pointX}
               cy={pointY}
-              r="3.8"
+              r={pointRadius(line, point)}
               fill={line.color}
+              style={`opacity: ${pointOpacity(line, point)}`}
             />
-            <circle
-              class="point-hit"
-              role="graphics-symbol"
-              aria-label={`${line.label} on ${xFormatter(point.x)}: ${yFormatter(point.y)}`}
-              cx={pointX}
-              cy={pointY}
-              r="10"
-              fill="transparent"
-              on:pointerenter={() => showPoint(line, point, index)}
-              on:pointermove={() => showPoint(line, point, index)}
-              on:pointerleave={() => (hoveredPoint = null)}
-            />
+            {#if hoverMode === 'point'}
+              <circle
+                class="point-hit"
+                role="graphics-symbol"
+                aria-label={`${line.label} on ${xFormatter(point.x)}: ${yFormatter(point.y)}`}
+                cx={pointX}
+                cy={pointY}
+                r="10"
+                fill="transparent"
+                on:pointerenter={() => showPoint(line, point, index)}
+                on:pointermove={() => showPoint(line, point, index)}
+                on:pointerleave={clearHover}
+              />
+            {/if}
           {/if}
         {/each}
       {/each}
+
+      {#if hoverMode === 'x'}
+        {#each firstSeries as point, index}
+          {@const hitLeft = index === 0 ? margin.left : (xAt(index - 1, firstSeries.length) + xAt(index, firstSeries.length)) / 2}
+          {@const hitRight =
+            index === firstSeries.length - 1
+              ? width - margin.right
+              : (xAt(index, firstSeries.length) + xAt(index + 1, firstSeries.length)) / 2}
+          <rect
+            class="day-hit"
+            role="graphics-symbol"
+            aria-label={`${xFormatter(point.x)} chart values`}
+            x={hitLeft}
+            y={margin.top}
+            width={Math.max(hitRight - hitLeft, 1)}
+            height={height - margin.top - margin.bottom}
+            fill="transparent"
+            on:pointerenter={() => showDay(index)}
+            on:pointermove={() => showDay(index)}
+            on:pointerleave={clearHover}
+          />
+        {/each}
+      {/if}
 
       {#each xTicks as tick, index}
         {#if tick}
@@ -160,25 +322,31 @@
         {/if}
       {/each}
 
-      {#if hoveredPoint && isValidValue(hoveredPoint.point.y)}
+      {#if tooltipEntries.length && tooltipDay}
         <line
           class="hover-guide"
-          x1={hoveredPoint.x}
-          x2={hoveredPoint.x}
+          x1={hoveredX}
+          x2={hoveredX}
           y1={margin.top}
           y2={height - margin.bottom}
-          stroke={hoveredPoint.color}
+          stroke={tooltipEntries[0].color}
         />
-        <circle class="hover-ring" cx={hoveredPoint.x} cy={hoveredPoint.y} r="7" stroke={hoveredPoint.color} />
-        <g class="chart-tooltip" transform={`translate(${tooltipX(hoveredPoint.x)}, ${tooltipY(hoveredPoint.y)})`}>
-          <rect class="tooltip-box" width={tooltipWidth} height={tooltipHeight} rx="8" fill="white" stroke={hoveredPoint.color} />
-          <rect class="tooltip-accent" width="5" height={tooltipHeight} rx="2.5" fill={hoveredPoint.color} />
-          <circle cx="18" cy="21" r="4.5" fill={hoveredPoint.color} />
-          <text class="tooltip-title" x="30" y="24">{xFormatter(hoveredPoint.point.x)}</text>
-          <text class="tooltip-value" x="14" y="49" fill={hoveredPoint.color}>
-            {hoveredPoint.seriesLabel}: {yFormatter(hoveredPoint.point.y)}
-          </text>
-          <text class="tooltip-meta" x="14" y="67">{hoveredPoint.point.x}</text>
+        {#each tooltipEntries as entry}
+          {#if entry.y !== null}
+            <circle class="hover-ring" cx={hoveredX} cy={entry.y} r="7" stroke={entry.color} />
+          {/if}
+        {/each}
+        <g class="chart-tooltip" transform={`translate(${tooltipX(hoveredX)}, ${tooltipY(hoveredY)})`}>
+          <rect class="tooltip-box" width={tooltipWidth} height={tooltipHeight} rx="8" fill="white" stroke={tooltipEntries[0].color} />
+          <rect class="tooltip-accent" width="5" height={tooltipHeight} rx="2.5" fill={tooltipEntries[0].color} />
+          <text class="tooltip-title" x="14" y="24">{xFormatter(tooltipDay)}</text>
+          {#each tooltipEntries as entry, index}
+            <circle cx="18" cy={49 + index * 18} r="4.5" fill={entry.color} />
+            <text class="tooltip-value" x="30" y={53 + index * 18} fill={entry.color}>
+              {entry.label}: {yFormatter(entry.value)}
+            </text>
+          {/each}
+          <text class="tooltip-meta" x="14" y={tooltipHeight - 10}>{tooltipDay}</text>
         </g>
       {/if}
     </svg>
@@ -188,7 +356,7 @@
 
   {#if showLegend}
     <div class="legend">
-      {#each series as line}
+      {#each legendSeries as line}
         <span><i style={`background: ${line.color}`}></i>{line.label}</span>
       {/each}
     </div>
@@ -220,6 +388,10 @@
     stroke-width: 1;
   }
 
+  .background-band {
+    opacity: 0.56;
+  }
+
   .axis-label {
     fill: #667085;
     font-size: 12px;
@@ -232,26 +404,20 @@
 
   .line {
     fill: none;
-    stroke-width: 3;
     stroke-linecap: round;
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
   }
 
   .point {
-    opacity: 0;
     transition:
       opacity 120ms ease,
       r 120ms ease;
     vector-effect: non-scaling-stroke;
   }
 
-  .point.active {
-    opacity: 1;
-    r: 5;
-  }
-
-  .point-hit {
+  .point-hit,
+  .day-hit {
     cursor: crosshair;
     pointer-events: all;
   }

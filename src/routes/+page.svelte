@@ -25,6 +25,13 @@
     label: string;
     color: string;
     values: Array<{ x: string; y: number | null | undefined }>;
+    opacity?: number;
+    pointOpacity?: number;
+    pointRadius?: number;
+    showInLegend?: boolean;
+    showPoints?: 'always' | 'hover' | false;
+    strokeWidth?: number;
+    tooltipOnly?: boolean;
   };
 
   type ErrorPayload = {
@@ -81,21 +88,33 @@
     : 'demo:data.zip summary';
 
   $: sleepDurationSeries = [
-    seriesFor('totalSleepHours', 'Sleep', chartColors.blue),
-    seriesFor('timeInBedHours', 'In bed', chartColors.gray)
+    ...rawAndAverageSeries('totalSleepHours', 'Sleep', chartColors.blue),
+    ...rawAndAverageSeries('timeInBedHours', 'In bed', chartColors.gray)
   ];
+  $: sleepScoreSeries = rawAndAverageSeries('sleepScore', 'Sleep score', chartColors.blue);
+  $: latencySeries = rawAndAverageSeries('latencyMinutes', 'Latency', chartColors.green);
+  $: latencyMaxY = maxForKey('latencyMinutes', 50, 10);
   $: sleepTimingSeries = [
-    seriesFor('bedtimeStartHour', 'Bedtime', chartColors.violet),
-    seriesFor('wakeTimeHour', 'Wake', chartColors.amber)
+    ...rawAndAverageSeries('bedtimeStartHour', 'Bedtime', chartColors.violet),
+    ...rawAndAverageSeries('wakeTimeHour', 'Wake', chartColors.amber)
   ];
-  $: sleepStageRows = daily.map((day) => ({
-    x: day.day,
-    parts: [
-      { label: 'Deep', value: day.deepSleepHours, color: chartColors.blue },
-      { label: 'REM', value: day.remSleepHours, color: chartColors.violet },
-      { label: 'Awake', value: day.awakeHours, color: chartColors.amber }
-    ]
-  }));
+  $: sleepStageSeries = [
+    rollingSeries('deepSleepHours', 'Deep 7-day avg', chartColors.blue),
+    rollingSeries('remSleepHours', 'REM 7-day avg', chartColors.violet),
+    rollingSeries('awakeHours', 'Awake 7-day avg', chartColors.amber),
+    {
+      ...rollingSeries('totalSleepHours', 'Total sleep 7-day avg', chartColors.ink),
+      showInLegend: false,
+      tooltipOnly: true
+    }
+  ];
+  $: latencyBands = [
+    { from: 0, to: 10, color: '#dcfce7' },
+    { from: 10, to: 20, color: '#dbeafe' },
+    { from: 20, to: 30, color: '#fef9c3' },
+    { from: 30, to: 40, color: '#ffedd5' },
+    { from: 40, to: null, color: '#fee2e2' }
+  ];
 
   $: heartSeries = [
     seriesFor('averageHeartRate', 'Night avg HR', chartColors.rose),
@@ -228,6 +247,8 @@
     return {
       label,
       color,
+      showPoints: 'hover',
+      strokeWidth: 3.4,
       values: daily.map((day, index) => ({
         x: day.day,
         y: average(
@@ -237,6 +258,29 @@
         )
       }))
     };
+  }
+
+  function rawAndAverageSeries(key: keyof DailyMetric, label: string, color: string): ChartSeries[] {
+    return [
+      {
+        ...seriesFor(key, `${label} raw`, color),
+        opacity: 0.32,
+        pointOpacity: 0.42,
+        pointRadius: 2.4,
+        showPoints: 'always',
+        strokeWidth: 1.35
+      },
+      {
+        ...rollingSeries(key, `${label} 7-day avg`, color),
+        strokeWidth: 3.6
+      }
+    ];
+  }
+
+  function maxForKey(key: keyof DailyMetric, minimum: number, interval: number) {
+    const values = daily.map((day) => numeric(day[key])).filter((value): value is number => value !== null);
+    if (!values.length) return minimum;
+    return Math.max(minimum, Math.ceil(Math.max(...values) / interval) * interval);
   }
 
   function numeric(value: unknown) {
@@ -279,6 +323,10 @@
     const hours = Math.floor(value);
     const minutes = Math.round((value - hours) * 60);
     return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
+  }
+
+  function minutesLabel(value: number) {
+    return `${value.toFixed(0)}m`;
   }
 </script>
 
@@ -382,14 +430,37 @@
 
       {#if activeSection === 'sleep'}
         <div class="content-grid">
-          <div class="panel wide">
+          <div class="panel">
             <LineChart title="Sleep duration and time in bed" series={sleepDurationSeries} yFormatter={(value) => `${value.toFixed(1)}h`} xFormatter={compactDate} minY={0} />
           </div>
           <div class="panel">
-            <LineChart title="Bedtime and wake time" series={sleepTimingSeries} yFormatter={clockLabel} xFormatter={compactDate} />
+            <LineChart
+              title="Deep, REM, awake, and total sleep averages"
+              series={sleepStageSeries}
+              yFormatter={(value) => `${value.toFixed(1)}h`}
+              xFormatter={compactDate}
+              minY={0}
+              tickInterval={0.5}
+              hoverMode="x"
+            />
           </div>
           <div class="panel">
-            <StackedBars title="Deep, REM, and awake time" rows={sleepStageRows} unit="h" xFormatter={compactDate} valueFormatter={durationLabel} />
+            <LineChart
+              title="Sleep latency"
+              series={latencySeries}
+              yFormatter={minutesLabel}
+              xFormatter={compactDate}
+              minY={0}
+              maxY={latencyMaxY}
+              tickInterval={10}
+              backgroundBands={latencyBands}
+            />
+          </div>
+          <div class="panel">
+            <LineChart title="Oura sleep score" series={sleepScoreSeries} yFormatter={(value) => value.toFixed(0)} xFormatter={compactDate} minY={0} maxY={100} />
+          </div>
+          <div class="panel">
+            <LineChart title="Bedtime and wake time" series={sleepTimingSeries} yFormatter={clockLabel} xFormatter={compactDate} />
           </div>
           <InsightPanel title="Sleep readout" insights={summary.insights.sleep} />
         </div>
