@@ -441,7 +441,6 @@
               xFormatter={compactDate}
               minY={0}
               tickInterval={0.5}
-              hoverMode="x"
             />
           </div>
           <div class="panel">

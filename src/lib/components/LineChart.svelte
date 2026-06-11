@@ -17,14 +17,6 @@
     tooltipOnly?: boolean;
   };
 
-  type HoveredPoint = {
-    seriesLabel: string;
-    color: string;
-    point: ChartPoint;
-    x: number;
-    y: number;
-  };
-
   type BackgroundBand = {
     from: number;
     to: number | null;
@@ -47,7 +39,6 @@
   export let yFormatter: (value: number) => string = (value) => value.toLocaleString();
   export let xFormatter: (value: string) => string = (value) => value;
   export let showLegend = true;
-  export let hoverMode: 'point' | 'x' = 'point';
   export let backgroundBands: BackgroundBand[] = [];
 
   const width = 760;
@@ -55,8 +46,9 @@
   const gridCount = 4;
   const tooltipWidth = 230;
 
-  let hoveredPoint: HoveredPoint | null = null;
   let hoveredIndex: number | null = null;
+  let hoverPinned = false;
+  let hitOverlay: HTMLDivElement;
 
   $: drawableSeries = series.filter((line) => !line.tooltipOnly);
   $: legendSeries = series.filter((line) => line.showInLegend !== false && !line.tooltipOnly);
@@ -77,14 +69,13 @@
   $: xTicks = firstSeries.length
     ? [firstSeries[0], firstSeries[Math.floor(firstSeries.length / 2)], firstSeries[firstSeries.length - 1]]
     : [];
-  $: tooltipEntries = entriesForHover();
-  $: tooltipDay = hoverMode === 'x' && hoveredIndex !== null ? firstSeries[hoveredIndex]?.x : hoveredPoint?.point.x;
-  $: hoveredX =
-    hoverMode === 'x' && hoveredIndex !== null ? xAt(hoveredIndex, firstSeries.length) : hoveredPoint?.x ?? 0;
-  $: hoveredY =
-    hoverMode === 'x'
-      ? Math.min(...tooltipEntries.map((entry) => entry.y).filter((value): value is number => value !== null), height / 2)
-      : hoveredPoint?.y ?? height / 2;
+  $: tooltipEntries = entriesForHover(hoveredIndex, series, computedMin, ySpan);
+  $: tooltipDay = hoveredIndex !== null ? firstSeries[hoveredIndex]?.x : null;
+  $: hoveredX = hoveredIndex !== null ? xAt(hoveredIndex, firstSeries.length) : 0;
+  $: hoveredY = Math.min(
+    ...tooltipEntries.map((entry) => entry.y).filter((value): value is number => value !== null),
+    height / 2
+  );
   $: tooltipHeight = Math.max(78, 48 + tooltipEntries.length * 18);
 
   function xAt(index: number, length: number) {
@@ -132,50 +123,33 @@
     return Math.min(Math.max(y - tooltipHeight - 12, margin.top), height - margin.bottom - tooltipHeight);
   }
 
-  function pointOpacity(line: ChartSeries, point: ChartPoint) {
-    const active = isPointActive(line, point);
+  function pointOpacity(line: ChartSeries, active: boolean) {
     if (active) return 1;
     if (line.showPoints === 'always') return line.pointOpacity ?? line.opacity ?? 0.5;
     return 0;
   }
 
-  function pointRadius(line: ChartSeries, point: ChartPoint) {
+  function pointRadius(line: ChartSeries, active: boolean) {
     const radius = line.pointRadius ?? 3.8;
-    return isPointActive(line, point) ? radius + 1.3 : radius;
+    return active ? radius + 1.3 : radius;
   }
 
-  function isPointActive(line: ChartSeries, point: ChartPoint) {
-    if (hoverMode === 'x' && hoveredIndex !== null) return line.values[hoveredIndex] === point;
-    return hoveredPoint?.point === point && hoveredPoint?.seriesLabel === line.label;
-  }
-
-  function entriesForHover(): TooltipEntry[] {
-    if (hoverMode === 'x') {
-      if (hoveredIndex === null) return [];
-      const index = hoveredIndex;
-      return series
-        .map((line) => {
-          const point = line.values[index];
-          if (!point || !isValidValue(point.y)) return null;
-          return {
-            label: line.label,
-            color: line.color,
-            value: point.y,
-            y: line.tooltipOnly ? null : yAt(point.y)
-          };
-        })
-        .filter((entry): entry is TooltipEntry => entry !== null);
-    }
-
-    if (!hoveredPoint || !isValidValue(hoveredPoint.point.y)) return [];
-    return [
-      {
-        label: hoveredPoint.seriesLabel,
-        color: hoveredPoint.color,
-        value: hoveredPoint.point.y,
-        y: hoveredPoint.y
-      }
-    ];
+  function entriesForHover(index: number | null, lines: ChartSeries[], currentMin: number, currentSpan: number): TooltipEntry[] {
+    if (index === null) return [];
+    return lines
+      .map((line) => {
+        const point = line.values[index];
+        if (!point || !isValidValue(point.y)) return null;
+        return {
+          label: line.label,
+          color: line.color,
+          value: point.y,
+          y: line.tooltipOnly
+            ? null
+            : height - margin.bottom - ((point.y - currentMin) / currentSpan) * (height - margin.top - margin.bottom)
+        };
+      })
+      .filter((entry): entry is TooltipEntry => entry !== null);
   }
 
   function bandY(from: number, to: number | null) {
@@ -186,28 +160,78 @@
     return { y: y1, height: Math.max(y2 - y1, 0) };
   }
 
-  function showPoint(line: ChartSeries, point: ChartPoint, index: number) {
-    if (!isValidValue(point.y)) return;
+  function showDay(index: number, pinned = false) {
     hoveredIndex = index;
-    hoveredPoint = {
-      seriesLabel: line.label,
-      color: line.color,
-      point,
-      x: xAt(index, line.values.length),
-      y: yAt(point.y)
-    };
+    hoverPinned = pinned;
   }
 
-  function showDay(index: number) {
-    hoveredIndex = index;
-    hoveredPoint = null;
+  function indexFromClientX(clientX: number, target: HTMLElement) {
+    if (!firstSeries.length) return null;
+    const rect = target.getBoundingClientRect();
+    if (!rect.width) return null;
+    const ratio = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1);
+    return Math.min(Math.max(Math.round(ratio * (firstSeries.length - 1)), 0), firstSeries.length - 1);
   }
 
-  function clearHover() {
+  function showDayFromClientX(clientX: number, target: HTMLElement, pinned = false) {
+    const index = indexFromClientX(clientX, target);
+    if (index !== null) showDay(index, pinned || hoverPinned);
+  }
+
+  function isInsidePlot(clientX: number, clientY: number) {
+    if (!hitOverlay) return false;
+    const rect = hitOverlay.getBoundingClientRect();
+    return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+  }
+
+  function handleWindowMove(event: MouseEvent) {
+    if (!hitOverlay) return;
+    if (isInsidePlot(event.clientX, event.clientY)) {
+      showDayFromClientX(event.clientX, hitOverlay);
+    } else if (!hoverPinned) {
+      hoveredIndex = null;
+    }
+  }
+
+  function handleWindowClick(event: MouseEvent) {
+    if (!hitOverlay || !isInsidePlot(event.clientX, event.clientY)) return;
+    showDayFromClientX(event.clientX, hitOverlay, true);
+  }
+
+  function handleWindowTouch(event: TouchEvent) {
+    const touch = event.touches[0] ?? event.changedTouches[0];
+    if (!touch || !hitOverlay || !isInsidePlot(touch.clientX, touch.clientY)) return;
+    showDayFromClientX(touch.clientX, hitOverlay, true);
+  }
+
+  function handleOverlayKey(event: KeyboardEvent) {
+    if (!firstSeries.length) return;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      showDay(Math.max((hoveredIndex ?? 0) - 1, 0), true);
+    } else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      showDay(Math.min((hoveredIndex ?? 0) + 1, firstSeries.length - 1), true);
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      showDay(hoveredIndex ?? Math.floor(firstSeries.length / 2), true);
+    }
+  }
+
+  function focusOverlay() {
+    if (hoveredIndex === null && firstSeries.length) {
+      showDay(Math.floor(firstSeries.length / 2), true);
+    }
+  }
+
+  function clearHover(event: PointerEvent | MouseEvent) {
+    if ('pointerType' in event && event.pointerType === 'touch') return;
+    if (hoverPinned) return;
     hoveredIndex = null;
-    hoveredPoint = null;
   }
 </script>
+
+<svelte:window onmousemove={handleWindowMove} onclick={handleWindowClick} ontouchstart={handleWindowTouch} />
 
 <section class="chart-panel">
   {#if title}
@@ -215,14 +239,15 @@
   {/if}
 
   {#if allValues.length}
-    <svg
-      class="line-chart"
-      viewBox={`0 0 ${width} ${height}`}
-      role="img"
-      aria-label={title || 'Line chart'}
-      style={`height: ${height}px`}
-      preserveAspectRatio="none"
-    >
+    <div class="chart-frame" style={`--chart-height: ${height}px; --plot-left: ${(margin.left / width) * 100}%; --plot-right: ${(margin.right / width) * 100}%; --plot-top: ${margin.top}px; --plot-bottom: ${margin.bottom}px;`}>
+      <svg
+        class="line-chart"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={title || 'Line chart'}
+        style={`height: ${height}px`}
+        preserveAspectRatio="none"
+      >
       {#each backgroundBands as band}
         {#if (band.to ?? computedMax) > computedMin && band.from < computedMax}
           {@const range = bandY(band.from, band.to)}
@@ -259,55 +284,19 @@
           {#if isValidValue(point.y)}
             {@const pointX = xAt(index, line.values.length)}
             {@const pointY = yAt(point.y)}
+            {@const isActive = hoveredIndex !== null && line.values[hoveredIndex] === point}
             <circle
               class="point"
-              class:active={isPointActive(line, point)}
+              class:active={isActive}
               cx={pointX}
               cy={pointY}
-              r={pointRadius(line, point)}
+              r={pointRadius(line, isActive)}
               fill={line.color}
-              style={`opacity: ${pointOpacity(line, point)}`}
+              style={`opacity: ${pointOpacity(line, isActive)}`}
             />
-            {#if hoverMode === 'point'}
-              <circle
-                class="point-hit"
-                role="graphics-symbol"
-                aria-label={`${line.label} on ${xFormatter(point.x)}: ${yFormatter(point.y)}`}
-                cx={pointX}
-                cy={pointY}
-                r="10"
-                fill="transparent"
-                on:pointerenter={() => showPoint(line, point, index)}
-                on:pointermove={() => showPoint(line, point, index)}
-                on:pointerleave={clearHover}
-              />
-            {/if}
           {/if}
         {/each}
       {/each}
-
-      {#if hoverMode === 'x'}
-        {#each firstSeries as point, index}
-          {@const hitLeft = index === 0 ? margin.left : (xAt(index - 1, firstSeries.length) + xAt(index, firstSeries.length)) / 2}
-          {@const hitRight =
-            index === firstSeries.length - 1
-              ? width - margin.right
-              : (xAt(index, firstSeries.length) + xAt(index + 1, firstSeries.length)) / 2}
-          <rect
-            class="day-hit"
-            role="graphics-symbol"
-            aria-label={`${xFormatter(point.x)} chart values`}
-            x={hitLeft}
-            y={margin.top}
-            width={Math.max(hitRight - hitLeft, 1)}
-            height={height - margin.top - margin.bottom}
-            fill="transparent"
-            on:pointerenter={() => showDay(index)}
-            on:pointermove={() => showDay(index)}
-            on:pointerleave={clearHover}
-          />
-        {/each}
-      {/if}
 
       {#each xTicks as tick, index}
         {#if tick}
@@ -349,7 +338,20 @@
           <text class="tooltip-meta" x="14" y={tooltipHeight - 10}>{tooltipDay}</text>
         </g>
       {/if}
-    </svg>
+      </svg>
+
+      <div
+        bind:this={hitOverlay}
+        class="hit-overlay"
+        role="button"
+        tabindex="0"
+        aria-label={`${title || 'Line chart'} date selector`}
+        on:focus={focusOverlay}
+        on:keydown={handleOverlayKey}
+        on:mouseleave={clearHover}
+        on:pointerleave={clearHover}
+      ></div>
+    </div>
   {:else}
     <div class="empty">No data available</div>
   {/if}
@@ -373,6 +375,11 @@
     font-size: 0.92rem;
     font-weight: 760;
     margin-bottom: 10px;
+  }
+
+  .chart-frame {
+    min-height: 190px;
+    position: relative;
   }
 
   .line-chart {
@@ -416,10 +423,21 @@
     vector-effect: non-scaling-stroke;
   }
 
-  .point-hit,
-  .day-hit {
+  .hit-overlay {
+    bottom: var(--plot-bottom);
+    background: rgb(255 255 255 / 0.001);
     cursor: crosshair;
-    pointer-events: all;
+    left: var(--plot-left);
+    position: absolute;
+    right: var(--plot-right);
+    top: var(--plot-top);
+    touch-action: manipulation;
+    z-index: 2;
+  }
+
+  .hit-overlay:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: -2px;
   }
 
   .hover-guide {
