@@ -89,7 +89,7 @@
     seriesFor('wakeTimeHour', 'Wake', chartColors.amber)
   ];
   $: sleepStageRows = daily.map((day) => ({
-    x: shortDate(day.day),
+    x: day.day,
     parts: [
       { label: 'Deep', value: day.deepSleepHours, color: chartColors.blue },
       { label: 'REM', value: day.remSleepHours, color: chartColors.violet },
@@ -121,7 +121,7 @@
     seriesFor('totalCalories', 'Total calories', chartColors.amber)
   ];
   $: activityRows = daily.map((day) => ({
-    x: shortDate(day.day),
+    x: day.day,
     parts: [
       { label: 'Low', value: day.lowActivityHours, color: '#9ac6a4' },
       { label: 'Medium', value: day.mediumActivityHours, color: chartColors.green },
@@ -135,7 +135,7 @@
     seriesFor('recoveryHighHours', 'Recovery', chartColors.green)
   ];
   $: stressRows = daily.map((day) => ({
-    x: shortDate(day.day),
+    x: day.day,
     parts: [
       { label: 'Stress', value: day.stressHighHours, color: chartColors.rose },
       { label: 'Recovery', value: day.recoveryHighHours, color: chartColors.green }
@@ -389,7 +389,7 @@
             <LineChart title="Bedtime and wake time" series={sleepTimingSeries} yFormatter={clockLabel} xFormatter={compactDate} />
           </div>
           <div class="panel">
-            <StackedBars title="Deep, REM, and awake time" rows={sleepStageRows} unit="h" />
+            <StackedBars title="Deep, REM, and awake time" rows={sleepStageRows} unit="h" xFormatter={compactDate} valueFormatter={durationLabel} />
           </div>
           <InsightPanel title="Sleep readout" insights={summary.insights.sleep} />
         </div>
@@ -424,7 +424,7 @@
             <LineChart title="Calories" series={calorieSeries} yFormatter={(value) => value.toFixed(0)} xFormatter={compactDate} minY={0} />
           </div>
           <div class="panel wide">
-            <StackedBars title="Activity time breakdown" rows={activityRows} unit="h" />
+            <StackedBars title="Activity time breakdown" rows={activityRows} unit="h" xFormatter={compactDate} valueFormatter={durationLabel} />
           </div>
           <InsightPanel title="Activity readout" insights={summary.insights.activity} />
         </div>
@@ -434,7 +434,7 @@
             <LineChart title="Stress and recovery time" series={stressSeries} yFormatter={(value) => `${value.toFixed(1)}h`} xFormatter={compactDate} minY={0} />
           </div>
           <div class="panel">
-            <StackedBars title="Daily time in state" rows={stressRows} unit="h" />
+            <StackedBars title="Daily time in state" rows={stressRows} unit="h" xFormatter={compactDate} valueFormatter={durationLabel} />
           </div>
           <div class="panel">
             <Histogram title="Daytime stress score distribution" bins={summary.distributions.daytimeStress} color={chartColors.amber} />

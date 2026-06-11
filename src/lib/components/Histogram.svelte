@@ -1,6 +1,12 @@
 <script lang="ts">
   import type { HistogramBin } from '$lib/oura/types';
 
+  type HoveredBin = {
+    bin: HistogramBin;
+    x: number;
+    y: number;
+  };
+
   export let title = '';
   export let bins: HistogramBin[] = [];
   export let color = '#2563eb';
@@ -9,6 +15,10 @@
 
   const width = 720;
   const margin = { top: 16, right: 14, bottom: 36, left: 38 };
+  const tooltipWidth = 188;
+  const tooltipHeight = 72;
+
+  let hoveredBin: HoveredBin | null = null;
 
   $: maxCount = Math.max(...bins.map((bin) => bin.count), 1);
 
@@ -22,6 +32,18 @@
 
   function yAt(count: number) {
     return height - margin.bottom - (count / maxCount) * (height - margin.top - margin.bottom);
+  }
+
+  function tooltipX(x: number) {
+    return Math.min(Math.max(x + 12, margin.left), width - margin.right - tooltipWidth);
+  }
+
+  function tooltipY(y: number) {
+    return Math.min(Math.max(y - tooltipHeight - 12, margin.top), height - margin.bottom - tooltipHeight);
+  }
+
+  function formatBinValue(value: number) {
+    return `${value.toLocaleString()}${unit}`;
   }
 </script>
 
@@ -40,14 +62,23 @@
       preserveAspectRatio="none"
     >
       {#each bins as bin, index}
+        {@const barX = xAt(index)}
+        {@const barY = yAt(bin.count)}
+        {@const widthValue = barWidth()}
         <rect
-          x={xAt(index)}
-          y={yAt(bin.count)}
-          width={barWidth()}
-          height={height - margin.bottom - yAt(bin.count)}
+          class="bar"
+          class:active={hoveredBin?.bin === bin}
+          role="graphics-symbol"
+          aria-label={`${formatBinValue(bin.x0)} to ${formatBinValue(bin.x1)}: ${bin.count.toLocaleString()}`}
+          x={barX}
+          y={barY}
+          width={widthValue}
+          height={height - margin.bottom - barY}
           rx="2"
           fill={color}
-          opacity="0.82"
+          on:pointerenter={() => (hoveredBin = { bin, x: barX + widthValue / 2, y: barY })}
+          on:pointermove={() => (hoveredBin = { bin, x: barX + widthValue / 2, y: barY })}
+          on:pointerleave={() => (hoveredBin = null)}
         />
       {/each}
       <text class="axis-label" x={margin.left} y={height - 10} text-anchor="start">
@@ -59,6 +90,20 @@
       <text class="axis-label" x={margin.left - 6} y={margin.top + 6} text-anchor="end">
         {maxCount.toLocaleString()}
       </text>
+
+      {#if hoveredBin}
+        <g class="histogram-tooltip" transform={`translate(${tooltipX(hoveredBin.x)}, ${tooltipY(hoveredBin.y)})`}>
+          <rect class="tooltip-box" width={tooltipWidth} height={tooltipHeight} rx="8" fill="white" stroke={color} />
+          <rect class="tooltip-accent" width="5" height={tooltipHeight} rx="2.5" fill={color} />
+          <circle cx="18" cy="21" r="4.5" fill={color} />
+          <text class="tooltip-title" x="30" y="24">
+            {formatBinValue(hoveredBin.bin.x0)} to {formatBinValue(hoveredBin.bin.x1)}
+          </text>
+          <text class="tooltip-value" x="14" y="50" fill={color}>
+            Count: {hoveredBin.bin.count.toLocaleString()}
+          </text>
+        </g>
+      {/if}
     </svg>
   {:else}
     <div class="empty">No distribution data</div>
@@ -88,6 +133,40 @@
     fill: #667085;
     font-size: 12px;
     font-weight: 620;
+  }
+
+  .bar {
+    cursor: crosshair;
+    opacity: 0.82;
+    transition:
+      opacity 120ms ease,
+      filter 120ms ease;
+  }
+
+  .bar.active {
+    filter: saturate(1.18);
+    opacity: 1;
+  }
+
+  .histogram-tooltip {
+    filter: drop-shadow(0 12px 18px rgb(15 23 42 / 0.16));
+    pointer-events: none;
+  }
+
+  .tooltip-box {
+    stroke-width: 1.4;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .tooltip-title {
+    fill: #2c313a;
+    font-size: 13px;
+    font-weight: 760;
+  }
+
+  .tooltip-value {
+    font-size: 13px;
+    font-weight: 760;
   }
 
   .empty {
