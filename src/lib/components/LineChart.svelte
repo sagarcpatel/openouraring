@@ -30,6 +30,15 @@
     y: number | null;
   };
 
+  type HoverLabel = TooltipEntry & {
+    displayLabel: string;
+    displayValue: string;
+    labelX: number;
+    labelY: number;
+    labelWidth: number;
+    connectorX: number;
+  };
+
   export let title = '';
   export let series: ChartSeries[] = [];
   export let height = 240;
@@ -44,6 +53,11 @@
   const width = 760;
   const margin = { top: 18, right: 18, bottom: 34, left: 48 };
   const gridCount = 4;
+  const axisBadgeWidth = 96;
+  const axisBadgeHeight = 22;
+  const hoverLabelHeight = 24;
+  const hoverLabelGap = 6;
+  const hoverLabelMaxWidth = 214;
 
   let hoveredIndex: number | null = null;
   let hoverPinned = false;
@@ -70,8 +84,14 @@
     : [];
   $: tooltipEntries = entriesForHover(hoveredIndex, series, computedMin, ySpan);
   $: tooltipDay = hoveredIndex !== null ? firstSeries[hoveredIndex]?.x : null;
-  $: tooltipTitle = tooltipDay ? formatTooltipDay(tooltipDay) : '';
+  $: tooltipTitle = tooltipDay ? formatFullDay(tooltipDay) : '';
   $: hoveredX = hoveredIndex !== null ? xAt(hoveredIndex, firstSeries.length) : 0;
+  $: hoverLabels = labelsForHover(tooltipEntries, hoveredX);
+  $: axisBadgeX = Math.min(
+    Math.max(hoveredX - axisBadgeWidth / 2, margin.left),
+    width - margin.right - axisBadgeWidth
+  );
+  $: axisBadgePointerX = Math.max(Math.min(hoveredX - axisBadgeX, axisBadgeWidth - 10), 10);
 
   function xAt(index: number, length: number) {
     if (length <= 1) return margin.left;
@@ -139,10 +159,65 @@
       .filter((entry): entry is TooltipEntry => entry !== null);
   }
 
-  function formatTooltipDay(value: string) {
+  function labelsForHover(entries: TooltipEntry[], x: number): HoverLabel[] {
+    if (!entries.length) return [];
+
+    const plotTop = margin.top + 2;
+    const plotBottom = height - margin.bottom - 2;
+    const canUseRight = width - margin.right - x >= hoverLabelMaxWidth + 14 || x - margin.left < hoverLabelMaxWidth + 14;
+    const sortedLabels = entries
+      .map((entry, index) => {
+        const displayLabel = truncateLabel(entry.label);
+        const displayValue = yFormatter(entry.value);
+        const labelWidth = labelWidthFor(displayLabel, displayValue);
+        const targetY =
+          entry.y ?? Math.min(plotBottom - hoverLabelHeight, plotTop + index * (hoverLabelHeight + hoverLabelGap));
+        const labelX = canUseRight
+          ? Math.min(x + 12, width - margin.right - labelWidth)
+          : Math.max(x - 12 - labelWidth, margin.left);
+
+        return {
+          ...entry,
+          displayLabel,
+          displayValue,
+          labelX,
+          labelY: Math.min(Math.max(targetY - hoverLabelHeight / 2, plotTop), plotBottom - hoverLabelHeight),
+          labelWidth,
+          connectorX: canUseRight ? labelX : labelX + labelWidth
+        };
+      })
+      .sort((a, b) => a.labelY - b.labelY);
+
+    for (let index = 1; index < sortedLabels.length; index += 1) {
+      const previous = sortedLabels[index - 1];
+      const current = sortedLabels[index];
+      current.labelY = Math.max(current.labelY, previous.labelY + hoverLabelHeight + hoverLabelGap);
+    }
+
+    const overflow = sortedLabels.at(-1)
+      ? sortedLabels.at(-1)!.labelY + hoverLabelHeight - plotBottom
+      : 0;
+    if (overflow > 0) {
+      for (const label of sortedLabels) {
+        label.labelY = Math.max(plotTop, label.labelY - overflow);
+      }
+    }
+
+    return sortedLabels;
+  }
+
+  function truncateLabel(label: string) {
+    return label.length > 22 ? `${label.slice(0, 19)}...` : label;
+  }
+
+  function labelWidthFor(label: string, value: string) {
+    return Math.min(Math.max(72 + (label.length + value.length) * 5.6, 118), hoverLabelMaxWidth);
+  }
+
+  function formatFullDay(value: string) {
     const date = new Date(`${value}T00:00:00Z`);
     if (Number.isNaN(date.getTime())) return xFormatter(value);
-    return `${xFormatter(value)} '${String(date.getUTCFullYear()).slice(-2)}`;
+    return `${xFormatter(value)} ${date.getUTCFullYear()}`;
   }
 
   function bandY(from: number, to: number | null) {
@@ -228,25 +303,12 @@
 
 <section class="chart-panel">
   {#if title}
-    <div class="chart-heading">{title}</div>
+    <div class="chart-heading">
+      <span class="heading-title">{title}</span>
+    </div>
   {/if}
 
   {#if allValues.length}
-    <div class="hover-readout" class:active={tooltipEntries.length && tooltipDay}>
-      {#if tooltipEntries.length && tooltipDay}
-        <div class="readout-date">{tooltipTitle}</div>
-        <div class="readout-values">
-          {#each tooltipEntries as entry}
-            <span class="readout-value" style={`--series-color: ${entry.color}`}>
-              <i></i>
-              <span>{entry.label}</span>
-              <strong>{yFormatter(entry.value)}</strong>
-            </span>
-          {/each}
-        </div>
-      {/if}
-    </div>
-
     <div class="chart-frame" style={`--chart-height: ${height}px; --plot-left: ${(margin.left / width) * 100}%; --plot-right: ${(margin.right / width) * 100}%; --plot-top: ${margin.top}px; --plot-bottom: ${margin.bottom}px;`}>
       <svg
         class="line-chart"
@@ -310,6 +372,7 @@
         {#if tick}
           <text
             class="axis-label x-label"
+            class:hover-muted={!!tooltipDay}
             x={xAt(index === 0 ? 0 : index === 1 ? Math.floor(firstSeries.length / 2) : firstSeries.length - 1, firstSeries.length)}
             y={height - 10}
             text-anchor={index === 0 ? 'start' : index === 2 ? 'end' : 'middle'}
@@ -333,6 +396,36 @@
             <circle class="hover-ring" cx={hoveredX} cy={entry.y} r="7" stroke={entry.color} />
           {/if}
         {/each}
+        <g class="hover-value-labels">
+          {#each hoverLabels as label}
+            {#if label.y !== null}
+              <line
+                class="hover-label-connector"
+                x1={hoveredX}
+                y1={label.y}
+                x2={label.connectorX}
+                y2={label.labelY + hoverLabelHeight / 2}
+                stroke={label.color}
+              />
+            {/if}
+            <g class="hover-value-label" transform={`translate(${label.labelX}, ${label.labelY})`}>
+              <rect width={label.labelWidth} height={hoverLabelHeight} rx="6" fill="white" stroke={label.color} />
+              <circle cx="11" cy={hoverLabelHeight / 2} r="3.5" fill={label.color} />
+              <text x="20" y="16">
+                <tspan class="hover-label-name">{label.displayLabel}</tspan>
+                <tspan class="hover-label-value" dx="5" fill={label.color}>{label.displayValue}</tspan>
+              </text>
+            </g>
+          {/each}
+        </g>
+        <g class="axis-date-marker" transform={`translate(${axisBadgeX}, ${height - margin.bottom + 8})`}>
+          <path
+            d={`M${axisBadgePointerX - 5} 0 L${axisBadgePointerX} -5 L${axisBadgePointerX + 5} 0 Z`}
+            fill={tooltipEntries[0].color}
+          />
+          <rect width={axisBadgeWidth} height={axisBadgeHeight} rx="6" fill="white" stroke={tooltipEntries[0].color} />
+          <text x={axisBadgeWidth / 2} y="15" text-anchor="middle">{tooltipTitle}</text>
+        </g>
       {/if}
       </svg>
 
@@ -367,77 +460,23 @@
   }
 
   .chart-heading {
+    align-items: center;
     color: #2c313a;
+    display: flex;
+    flex-wrap: nowrap;
     font-size: 0.92rem;
     font-weight: 760;
-    margin-bottom: 10px;
-  }
-
-  .hover-readout {
-    align-items: center;
-    border-bottom: 1px solid transparent;
-    border-top: 1px solid transparent;
-    display: flex;
-    gap: 12px;
-    min-height: 48px;
-    padding: 4px 0 8px;
-    transition:
-      border-color 140ms ease,
-      opacity 140ms ease;
-  }
-
-  .hover-readout.active {
-    border-bottom-color: #e5e9f0;
-    border-top-color: #f2f4f7;
-  }
-
-  .readout-date {
-    color: #1f2937;
-    flex: 0 0 auto;
-    font-size: 0.82rem;
-    font-weight: 800;
-    letter-spacing: 0;
-    line-height: 1;
-    min-width: 56px;
-  }
-
-  .readout-values {
-    align-items: center;
-    display: flex;
-    flex: 1 1 auto;
-    flex-wrap: wrap;
     gap: 6px 12px;
+    margin-bottom: 10px;
+    min-height: 1.35rem;
+    overflow: hidden;
+  }
+
+  .heading-title {
+    flex: 0 1 auto;
     min-width: 0;
-  }
-
-  .readout-value {
-    align-items: baseline;
-    color: #596171;
-    display: inline-grid;
-    font-size: 0.78rem;
-    font-weight: 680;
-    gap: 4px;
-    grid-template-columns: 8px auto auto;
-    line-height: 1.2;
-    min-width: 0;
-  }
-
-  .readout-value i {
-    align-self: center;
-    background: var(--series-color);
-    border-radius: 50%;
-    display: inline-block;
-    height: 7px;
-    width: 7px;
-  }
-
-  .readout-value span {
-    overflow-wrap: anywhere;
-  }
-
-  .readout-value strong {
-    color: var(--series-color);
-    font-weight: 820;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
@@ -471,6 +510,10 @@
 
   .x-label {
     fill: #48515f;
+  }
+
+  .x-label.hover-muted {
+    opacity: 0.2;
   }
 
   .line {
@@ -515,6 +558,57 @@
     fill: #ffffff;
     stroke-width: 2.5;
     vector-effect: non-scaling-stroke;
+  }
+
+  .hover-value-labels {
+    pointer-events: none;
+  }
+
+  .hover-label-connector {
+    opacity: 0.34;
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .hover-value-label {
+    filter: drop-shadow(0 4px 8px rgb(15 23 42 / 0.12));
+  }
+
+  .hover-value-label rect {
+    stroke-width: 1.1;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .hover-value-label text {
+    fill: #344054;
+    font-size: 11px;
+    font-weight: 740;
+    letter-spacing: 0;
+  }
+
+  .hover-label-name {
+    fill: #596171;
+  }
+
+  .hover-label-value {
+    font-weight: 840;
+  }
+
+  .axis-date-marker {
+    filter: drop-shadow(0 4px 8px rgb(15 23 42 / 0.12));
+    pointer-events: none;
+  }
+
+  .axis-date-marker rect {
+    stroke-width: 1.3;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .axis-date-marker text {
+    fill: #1f2937;
+    font-size: 11px;
+    font-weight: 820;
+    letter-spacing: 0;
   }
 
   .legend {
