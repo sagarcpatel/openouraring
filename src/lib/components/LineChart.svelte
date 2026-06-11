@@ -44,7 +44,6 @@
   const width = 760;
   const margin = { top: 18, right: 18, bottom: 34, left: 48 };
   const gridCount = 4;
-  const tooltipWidth = 230;
 
   let hoveredIndex: number | null = null;
   let hoverPinned = false;
@@ -71,12 +70,8 @@
     : [];
   $: tooltipEntries = entriesForHover(hoveredIndex, series, computedMin, ySpan);
   $: tooltipDay = hoveredIndex !== null ? firstSeries[hoveredIndex]?.x : null;
+  $: tooltipTitle = tooltipDay ? formatTooltipDay(tooltipDay) : '';
   $: hoveredX = hoveredIndex !== null ? xAt(hoveredIndex, firstSeries.length) : 0;
-  $: hoveredY = Math.min(
-    ...tooltipEntries.map((entry) => entry.y).filter((value): value is number => value !== null),
-    height / 2
-  );
-  $: tooltipHeight = Math.max(78, 48 + tooltipEntries.length * 18);
 
   function xAt(index: number, length: number) {
     if (length <= 1) return margin.left;
@@ -115,14 +110,6 @@
       .join(' ');
   }
 
-  function tooltipX(x: number) {
-    return Math.min(Math.max(x + 12, margin.left), width - margin.right - tooltipWidth);
-  }
-
-  function tooltipY(y: number) {
-    return Math.min(Math.max(y - tooltipHeight - 12, margin.top), height - margin.bottom - tooltipHeight);
-  }
-
   function pointOpacity(line: ChartSeries, active: boolean) {
     if (active) return 1;
     if (line.showPoints === 'always') return line.pointOpacity ?? line.opacity ?? 0.5;
@@ -150,6 +137,12 @@
         };
       })
       .filter((entry): entry is TooltipEntry => entry !== null);
+  }
+
+  function formatTooltipDay(value: string) {
+    const date = new Date(`${value}T00:00:00Z`);
+    if (Number.isNaN(date.getTime())) return xFormatter(value);
+    return `${xFormatter(value)} '${String(date.getUTCFullYear()).slice(-2)}`;
   }
 
   function bandY(from: number, to: number | null) {
@@ -239,6 +232,21 @@
   {/if}
 
   {#if allValues.length}
+    <div class="hover-readout" class:active={tooltipEntries.length && tooltipDay}>
+      {#if tooltipEntries.length && tooltipDay}
+        <div class="readout-date">{tooltipTitle}</div>
+        <div class="readout-values">
+          {#each tooltipEntries as entry}
+            <span class="readout-value" style={`--series-color: ${entry.color}`}>
+              <i></i>
+              <span>{entry.label}</span>
+              <strong>{yFormatter(entry.value)}</strong>
+            </span>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
     <div class="chart-frame" style={`--chart-height: ${height}px; --plot-left: ${(margin.left / width) * 100}%; --plot-right: ${(margin.right / width) * 100}%; --plot-top: ${margin.top}px; --plot-bottom: ${margin.bottom}px;`}>
       <svg
         class="line-chart"
@@ -325,18 +333,6 @@
             <circle class="hover-ring" cx={hoveredX} cy={entry.y} r="7" stroke={entry.color} />
           {/if}
         {/each}
-        <g class="chart-tooltip" transform={`translate(${tooltipX(hoveredX)}, ${tooltipY(hoveredY)})`}>
-          <rect class="tooltip-box" width={tooltipWidth} height={tooltipHeight} rx="8" fill="white" stroke={tooltipEntries[0].color} />
-          <rect class="tooltip-accent" width="5" height={tooltipHeight} rx="2.5" fill={tooltipEntries[0].color} />
-          <text class="tooltip-title" x="14" y="24">{xFormatter(tooltipDay)}</text>
-          {#each tooltipEntries as entry, index}
-            <circle cx="18" cy={49 + index * 18} r="4.5" fill={entry.color} />
-            <text class="tooltip-value" x="30" y={53 + index * 18} fill={entry.color}>
-              {entry.label}: {yFormatter(entry.value)}
-            </text>
-          {/each}
-          <text class="tooltip-meta" x="14" y={tooltipHeight - 10}>{tooltipDay}</text>
-        </g>
       {/if}
       </svg>
 
@@ -375,6 +371,74 @@
     font-size: 0.92rem;
     font-weight: 760;
     margin-bottom: 10px;
+  }
+
+  .hover-readout {
+    align-items: center;
+    border-bottom: 1px solid transparent;
+    border-top: 1px solid transparent;
+    display: flex;
+    gap: 12px;
+    min-height: 48px;
+    padding: 4px 0 8px;
+    transition:
+      border-color 140ms ease,
+      opacity 140ms ease;
+  }
+
+  .hover-readout.active {
+    border-bottom-color: #e5e9f0;
+    border-top-color: #f2f4f7;
+  }
+
+  .readout-date {
+    color: #1f2937;
+    flex: 0 0 auto;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    line-height: 1;
+    min-width: 56px;
+  }
+
+  .readout-values {
+    align-items: center;
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    min-width: 0;
+  }
+
+  .readout-value {
+    align-items: baseline;
+    color: #596171;
+    display: inline-grid;
+    font-size: 0.78rem;
+    font-weight: 680;
+    gap: 4px;
+    grid-template-columns: 8px auto auto;
+    line-height: 1.2;
+    min-width: 0;
+  }
+
+  .readout-value i {
+    align-self: center;
+    background: var(--series-color);
+    border-radius: 50%;
+    display: inline-block;
+    height: 7px;
+    width: 7px;
+  }
+
+  .readout-value span {
+    overflow-wrap: anywhere;
+  }
+
+  .readout-value strong {
+    color: var(--series-color);
+    font-weight: 820;
+    white-space: nowrap;
   }
 
   .chart-frame {
@@ -451,33 +515,6 @@
     fill: #ffffff;
     stroke-width: 2.5;
     vector-effect: non-scaling-stroke;
-  }
-
-  .chart-tooltip {
-    filter: drop-shadow(0 12px 18px rgb(15 23 42 / 0.16));
-    pointer-events: none;
-  }
-
-  .tooltip-box {
-    stroke-width: 1.4;
-    vector-effect: non-scaling-stroke;
-  }
-
-  .tooltip-title {
-    fill: #2c313a;
-    font-size: 13px;
-    font-weight: 760;
-  }
-
-  .tooltip-value {
-    font-size: 13px;
-    font-weight: 760;
-  }
-
-  .tooltip-meta {
-    fill: #667085;
-    font-size: 11px;
-    font-weight: 620;
   }
 
   .legend {
