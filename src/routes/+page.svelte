@@ -6,9 +6,10 @@
     CircleQuestionMark,
     Database,
     Footprints,
+    GitFork,
     HeartPulse,
+    Info,
     Moon,
-    ShieldCheck,
     Trash2,
     UploadCloud,
     Wind,
@@ -599,6 +600,11 @@
       <span></span>
     </div>
 
+    <a class="about-floating-link" href="/about">
+      <Info size={17} strokeWidth={2.4} />
+      <span>About</span>
+    </a>
+
     <section class="upload-stage" aria-label="Choose Oura export">
       <div class="upload-mark"><Activity size={24} strokeWidth={2.5} /></div>
       <h1>OpenOura</h1>
@@ -670,8 +676,14 @@
     </nav>
 
     <div class="rail-meta">
-      <ShieldCheck size={18} />
-      <span>Location CSV ignored for charts</span>
+      <a href="/about">
+        <Info size={18} strokeWidth={2.4} />
+        <span>About</span>
+      </a>
+      <a href="https://github.com/exosai/openouraring" target="_blank" rel="noreferrer">
+        <GitFork size={18} strokeWidth={2.4} />
+        <span>GitHub</span>
+      </a>
     </div>
   </aside>
 
@@ -862,7 +874,6 @@
     </section>
 
     <footer class="footnotes">
-      <span>Inspired by Aleksa Gordic's Oura analysis categories and live dashboard structure.</span>
       <span>{summary.privacyNotes[2]}</span>
     </footer>
   </section>
@@ -985,6 +996,33 @@
   .upload-aura span:nth-child(3) {
     --scale: 1.12;
     animation: orbitPulse 7.4s ease-in-out infinite;
+  }
+
+  .about-floating-link {
+    align-items: center;
+    background: rgba(255, 255, 255, 0.74);
+    border: 1px solid rgba(203, 213, 225, 0.86);
+    border-radius: 8px;
+    color: #263241;
+    display: inline-flex;
+    font-size: 0.86rem;
+    font-weight: 760;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 12px;
+    position: absolute;
+    right: 22px;
+    text-decoration: none;
+    top: 22px;
+    z-index: 1;
+  }
+
+  .about-floating-link:hover,
+  .about-floating-link:focus-visible {
+    background: #111827;
+    border-color: #111827;
+    color: #ffffff;
+    outline: none;
   }
 
   .upload-shell.processing .upload-aura span {
@@ -1252,14 +1290,35 @@
   }
 
   .rail-meta {
-    align-items: center;
+    align-items: stretch;
     border-top: 1px solid #2b2d32;
     color: #a8b0bd;
-    display: flex;
+    display: grid;
     font-size: 0.82rem;
-    gap: 10px;
+    gap: 8px;
     line-height: 1.35;
     padding-top: 18px;
+  }
+
+  .rail-meta a {
+    align-items: center;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: inherit;
+    display: grid;
+    gap: 10px;
+    grid-template-columns: 22px 1fr;
+    min-height: 38px;
+    padding: 8px 10px;
+    text-decoration: none;
+  }
+
+  .rail-meta a:hover,
+  .rail-meta a:focus-visible {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    outline: none;
   }
 
   .workspace {
