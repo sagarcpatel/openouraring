@@ -299,6 +299,10 @@
     return isValidValue(value) ? yFormatter(value) : null;
   }
 
+  function legendStrokeWidth(line: ChartSeries) {
+    return `${Math.min(Math.max(line.strokeWidth ?? 3, 1.4), 5)}px`;
+  }
+
   function averageCalloutKey(callout: AverageCallout) {
     return `${callout.label}:${callout.value}:${callout.y}`;
   }
@@ -481,7 +485,7 @@
       {#each legendSeries as line}
         {@const value = legendValue(line, hoveredIndex)}
         <span>
-          <i style={`background: ${line.color}`}></i>
+          <i style={`--legend-color: ${line.color}; --legend-stroke-width: ${legendStrokeWidth(line)}`}></i>
           <span class="legend-label">{line.label}</span>
           {#if value}
             <strong class="legend-value" style={`color: ${line.color}`}>{value}</strong>
@@ -682,9 +686,10 @@
   }
 
   .legend i {
+    background: var(--legend-color);
     border-radius: 999px;
     display: inline-block;
-    height: 8px;
+    height: var(--legend-stroke-width, 3px);
     width: 18px;
   }
 

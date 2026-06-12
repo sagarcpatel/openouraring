@@ -175,9 +175,7 @@
   ];
   $: vascularAgeSeries = rawMovingAverageAverageSeries(daily, 'vascularAge', 'Vascular age', chartColors.pink, (value) => value.toFixed(1));
 
-  $: stepSeries = rawMovingAverageAverageSeries(daily, 'steps', 'Steps', chartColors.green, (value) =>
-    value.toLocaleString('en-US', { maximumFractionDigits: 0 })
-  );
+  $: stepSeries = rawMovingAverageAverageSeries(daily, 'steps', 'Steps', chartColors.green, wholeNumberLabel);
   $: calorieSeries = [
     ...rawMovingAverageAverageSeries(daily, 'activeCalories', 'Active calories', chartColors.rose, (value) =>
       value.toLocaleString('en-US', { maximumFractionDigits: 0 })
@@ -508,6 +506,10 @@
     });
   }
 
+  function wholeNumberLabel(value: number) {
+    return value.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  }
+
   function durationLabel(value: number | null | undefined) {
     if (value === null || value === undefined) return 'n/a';
     const hours = Math.floor(value);
@@ -709,7 +711,7 @@
       {:else if activeSection === 'activity'}
         <div class="content-grid">
           <div class="panel wide">
-            <LineChart title="Daily steps" series={stepSeries} yFormatter={(value) => value.toLocaleString()} xFormatter={compactDate} minY={0} />
+            <LineChart title="Daily steps" series={stepSeries} yFormatter={wholeNumberLabel} xFormatter={compactDate} minY={0} />
           </div>
           <div class="panel">
             <LineChart title="Calories (active vs total, 7-day trend)" series={calorieSeries} yFormatter={(value) => value.toFixed(0)} xFormatter={compactDate} minY={0} />

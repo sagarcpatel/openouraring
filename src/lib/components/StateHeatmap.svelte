@@ -29,6 +29,12 @@
   let hoveredPoint: HoveredPoint | null = null;
 
   $: visiblePoints = points.slice(-maxPoints);
+  $: stateCounts = visiblePoints.reduce<Record<string, number>>((counts, point) => {
+    if (point.state) {
+      counts[point.state] = (counts[point.state] ?? 0) + 1;
+    }
+    return counts;
+  }, {});
 
   function xAt(index: number) {
     return margin.left + (index / Math.max(visiblePoints.length, 1)) * (width - margin.left - margin.right);
@@ -107,8 +113,8 @@
       {/if}
     </svg>
     <div class="legend">
-      {#each Object.entries(styles) as [, style]}
-        <span><i style={`background:${style.color}`}></i>{style.label}</span>
+      {#each Object.entries(styles) as [state, style]}
+        <span><i style={`background:${style.color}`}></i>{style.label} <strong>{stateCounts[state] ?? 0}</strong></span>
       {/each}
     </div>
   {:else}
