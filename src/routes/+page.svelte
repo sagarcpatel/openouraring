@@ -12,6 +12,7 @@
     Trash2,
     UploadCloud,
     Wind,
+    X,
     Zap
   } from '@lucide/svelte';
   import Histogram from '$lib/components/Histogram.svelte';
@@ -47,7 +48,6 @@
     strokeWidth?: number;
     tooltipOnly?: boolean;
   };
-  type UploadInfoKey = 'privacy' | 'export';
 
   const MAX_UPLOAD_BYTES = 75 * 1024 * 1024;
   const chartDataKeys: Array<keyof DailyMetric> = [
@@ -116,7 +116,7 @@
   let uploadState: 'idle' | 'uploading' | 'revealing' | 'done' | 'error' = 'idle';
   let uploadMessage = '';
   let storedDatasetId = '';
-  let activeUploadInfo: UploadInfoKey | null = null;
+  let showDataHelp = false;
   let fileInput: HTMLInputElement;
 
   onMount(async () => {
@@ -524,8 +524,8 @@
     return `${value.toFixed(0)}m`;
   }
 
-  function toggleUploadInfo(info: UploadInfoKey) {
-    activeUploadInfo = activeUploadInfo === info ? null : info;
+  function toggleDataHelp() {
+    showDataHelp = !showDataHelp;
   }
 </script>
 
@@ -552,65 +552,45 @@
     <section class="upload-stage" aria-label="Choose Oura export">
       <div class="upload-mark"><Activity size={24} strokeWidth={2.5} /></div>
       <h1>OpenOura</h1>
-      <button type="button" class="choose-button" on:click={() => fileInput?.click()} disabled={uploadState === 'uploading'}>
-        <UploadCloud size={20} />
-        <span>{uploadState === 'uploading' ? 'Processing data.zip' : 'Choose data.zip export'}</span>
-      </button>
-      <div class="upload-info-actions" aria-label="More information">
-        <button
-          type="button"
-          class="upload-info-button privacy"
-          class:active={activeUploadInfo === 'privacy'}
-          title="Private by design"
-          aria-label="Private by design"
-          aria-controls="upload-info-panel"
-          aria-expanded={activeUploadInfo === 'privacy'}
-          on:click={() => toggleUploadInfo('privacy')}
-        >
-          <ShieldCheck size={22} strokeWidth={2.3} />
+      <div class="upload-action-row">
+        <button type="button" class="choose-button" on:click={() => fileInput?.click()} disabled={uploadState === 'uploading'}>
+          <UploadCloud size={20} />
+          <span>{uploadState === 'uploading' ? 'Processing data.zip' : 'Choose data.zip export'}</span>
         </button>
         <button
           type="button"
-          class="upload-info-button export"
-          class:active={activeUploadInfo === 'export'}
+          class="data-help-button"
           title="Need your Oura data?"
-          aria-label="Need your Oura data?"
-          aria-controls="upload-info-panel"
-          aria-expanded={activeUploadInfo === 'export'}
-          on:click={() => toggleUploadInfo('export')}
+          aria-label="How to get your Oura data"
+          aria-controls="data-help-panel"
+          aria-expanded={showDataHelp}
+          on:click={toggleDataHelp}
         >
-          <CircleQuestionMark size={22} strokeWidth={2.3} />
+          <CircleQuestionMark size={18} strokeWidth={2.4} />
         </button>
       </div>
-      {#if activeUploadInfo}
-        {#key activeUploadInfo}
-          <div
-            id="upload-info-panel"
-            class="upload-info-panel"
-            class:export-info={activeUploadInfo === 'export'}
-            role="region"
-            aria-label={activeUploadInfo === 'privacy' ? 'Private by design' : 'Need your Oura data?'}
-            aria-live="polite"
-          >
-            {#if activeUploadInfo === 'privacy'}
-              <strong>Private by design</strong>
-              <p>All data processing happens locally in your browser. Your ZIP is never sent to a server or stored by OpenOura.</p>
-            {:else}
-              <strong>Need your Oura data?</strong>
-              <p>
-                Visit
-                <a href="https://membership.ouraring.com/data-export" target="_blank" rel="noreferrer">Oura's data export page</a>
-                and log into your account to request a ZIP of CSV data from your ring. You can export even without a paid subscription;
-                requests can take over 48 hours to complete.
-              </p>
-            {/if}
+      {#if showDataHelp}
+        <div id="data-help-panel" class="data-help-panel" role="region" aria-label="How to get your Oura data">
+          <div>
+            <strong>Need your Oura data?</strong>
+            <p>
+              Visit
+              <a href="https://membership.ouraring.com/data-export" target="_blank" rel="noreferrer">Oura's data export page</a>
+              and log into your account to request a ZIP of CSV data from your ring. You can export even without a paid subscription;
+              requests can take over 48 hours to complete.
+            </p>
           </div>
-        {/key}
+          <button type="button" class="data-help-close" aria-label="Close data help" on:click={() => (showDataHelp = false)}>
+            <X size={16} strokeWidth={2.4} />
+          </button>
+        </div>
       {/if}
       {#if uploadState === 'error'}
         <p class="upload-error">{uploadMessage}</p>
       {/if}
     </section>
+
+    <p class="upload-privacy-footer">Private by design: all processing happens in your browser using local storage.</p>
   </main>
 {:else}
 {#key summary.storage?.datasetId ?? summary.generatedAt}
@@ -879,7 +859,7 @@
     justify-items: center;
     min-height: 100vh;
     overflow: hidden;
-    padding: 24px;
+    padding: 24px 24px 82px;
     position: relative;
   }
 
@@ -982,140 +962,114 @@
     opacity: 0.82;
   }
 
-  .upload-info-actions {
+  .upload-action-row {
     align-items: center;
-    background: rgba(255, 255, 255, 0.68);
-    border: 1px solid rgba(203, 213, 225, 0.86);
-    border-radius: 999px;
-    box-shadow:
-      0 18px 48px rgba(15, 23, 42, 0.1),
-      inset 0 1px 0 rgba(255, 255, 255, 0.88);
-    display: inline-flex;
-    gap: 8px;
-    padding: 8px;
-  }
-
-  .upload-info-button {
-    align-items: center;
-    aspect-ratio: 1;
-    background: rgba(255, 255, 255, 0.9);
-    border: 1px solid rgba(203, 213, 225, 0.92);
-    border-radius: 999px;
-    color: #526072;
-    cursor: pointer;
-    display: grid;
-    height: 48px;
+    display: inline-grid;
     justify-items: center;
     position: relative;
+  }
+
+  .data-help-button {
+    align-items: center;
+    aspect-ratio: 1;
+    background: transparent;
+    border: 0;
+    color: #2563eb;
+    cursor: pointer;
+    display: grid;
+    height: 28px;
+    justify-items: center;
+    padding: 0;
+    position: absolute;
+    left: calc(100% + 4px);
+    top: 50%;
+    transform: translateY(-50%);
     transition:
-      background 180ms ease,
-      border-color 180ms ease,
-      box-shadow 180ms ease,
       color 180ms ease,
       transform 180ms ease;
   }
 
-  .upload-info-button::after {
-    border: 1px solid currentColor;
-    border-radius: inherit;
-    content: "";
-    inset: -5px;
-    opacity: 0;
-    position: absolute;
-    transform: scale(0.78);
-    transition:
-      opacity 180ms ease,
-      transform 180ms ease;
+  .data-help-button:hover,
+  .data-help-button:focus-visible {
+    color: #1d4ed8;
+    transform: translateY(calc(-50% - 2px));
   }
 
-  .upload-info-button:hover,
-  .upload-info-button:focus-visible {
-    border-color: rgba(17, 24, 39, 0.28);
-    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.13);
-    color: #111827;
-    transform: translateY(-2px);
-  }
-
-  .upload-info-button.active {
-    border-color: transparent;
-    box-shadow:
-      0 16px 34px rgba(15, 23, 42, 0.18),
-      inset 0 1px 0 rgba(255, 255, 255, 0.26);
-    color: #ffffff;
-    transform: translateY(-2px);
-  }
-
-  .upload-info-button.active::after {
-    opacity: 0.28;
-    transform: scale(1);
-  }
-
-  .upload-info-button.privacy.active {
-    background: #0f766e;
-  }
-
-  .upload-info-button.export.active {
-    background: #2563eb;
-  }
-
-  .upload-info-panel {
-    animation: uploadInfoReveal 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
-    background: rgba(255, 255, 255, 0.84);
-    border: 1px solid rgba(187, 247, 208, 0.9);
+  .data-help-panel {
+    animation: dataHelpReveal 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    align-items: start;
+    background: rgba(255, 255, 255, 0.86);
+    border: 1px solid rgba(191, 219, 254, 0.96);
     border-radius: 8px;
     box-shadow:
-      0 24px 70px rgba(15, 23, 42, 0.13),
+      0 24px 70px rgba(15, 23, 42, 0.12),
       inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(0, 1fr) auto;
     max-width: min(500px, calc(100vw - 48px));
     padding: 16px;
-    position: relative;
     text-align: left;
     transform-origin: top center;
   }
 
-  .upload-info-panel::before {
-    background: inherit;
-    border-left: 1px solid rgba(187, 247, 208, 0.9);
-    border-top: 1px solid rgba(187, 247, 208, 0.9);
-    content: "";
-    height: 12px;
-    left: 50%;
-    position: absolute;
-    top: -7px;
-    transform: translateX(-50%) rotate(45deg);
-    width: 12px;
-  }
-
-  .upload-info-panel.export-info {
-    border-color: rgba(191, 219, 254, 0.96);
-  }
-
-  .upload-info-panel.export-info::before {
-    border-color: rgba(191, 219, 254, 0.96);
-  }
-
-  .upload-info-panel strong {
+  .data-help-panel strong {
     color: #111827;
     display: block;
     font-size: 0.94rem;
     line-height: 1.2;
   }
 
-  .upload-info-panel p {
+  .data-help-panel p {
     color: #4b5563;
     font-size: 0.86rem;
     line-height: 1.45;
     margin: 4px 0 0;
   }
 
-  .upload-info-panel a {
+  .data-help-panel a {
     color: #1d4ed8;
     font-weight: 740;
     text-decoration: none;
   }
 
-  .upload-info-panel a:hover {
+  .data-help-panel a:hover {
     text-decoration: underline;
+  }
+
+  .data-help-close {
+    align-items: center;
+    aspect-ratio: 1;
+    background: rgba(248, 250, 252, 0.9);
+    border: 1px solid rgba(203, 213, 225, 0.9);
+    border-radius: 999px;
+    color: #64748b;
+    cursor: pointer;
+    display: grid;
+    height: 30px;
+    justify-items: center;
+    transition:
+      background 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .data-help-close:hover,
+  .data-help-close:focus-visible {
+    background: #111827;
+    color: #ffffff;
+    transform: translateY(-1px);
+  }
+
+  .upload-privacy-footer {
+    bottom: 22px;
+    color: #596171;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    margin: 0;
+    max-width: min(520px, calc(100vw - 48px));
+    position: absolute;
+    text-align: center;
   }
 
   .upload-error {
@@ -1470,7 +1424,7 @@
     }
   }
 
-  @keyframes uploadInfoReveal {
+  @keyframes dataHelpReveal {
     0% {
       filter: blur(8px);
       opacity: 0;
@@ -1491,15 +1445,15 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .upload-info-panel,
+    .data-help-panel,
     .app-shell.dashboard-revealing,
     .upload-aura span {
       animation: none;
     }
 
     .choose-button,
-    .upload-info-button,
-    .upload-info-button::after {
+    .data-help-button,
+    .data-help-close {
       transition: none;
     }
   }
@@ -1577,8 +1531,14 @@
     }
 
     .choose-button {
+      flex: 1 1 auto;
       justify-content: center;
+      min-width: 0;
       width: min(100%, 300px);
+    }
+
+    .upload-action-row {
+      width: min(calc(100vw - 88px), 300px);
     }
 
     .metric-grid {
