@@ -30,6 +30,10 @@
   import type { DailyMetric, OuraSummary, SectionKey } from '$lib/oura/types';
 
   type ChartSeries = {
+    averageCallout?: {
+      label: string;
+      value: string;
+    };
     label: string;
     color: string;
     values: Array<{ x: string; y: number | null | undefined }>;
@@ -142,11 +146,11 @@
     ...rawAndAverageSeries(daily, 'wakeTimeHour', 'Wake', chartColors.amber)
   ];
   $: sleepStageSeries = [
-    rollingSeries(daily, 'deepSleepHours', 'Deep 7-day avg', chartColors.blue),
-    rollingSeries(daily, 'remSleepHours', 'REM 7-day avg', chartColors.violet),
-    rollingSeries(daily, 'awakeHours', 'Awake 7-day avg', chartColors.amber),
+    rollingSeries(daily, 'deepSleepHours', 'Deep 7-day trend', chartColors.blue),
+    rollingSeries(daily, 'remSleepHours', 'REM 7-day trend', chartColors.violet),
+    rollingSeries(daily, 'awakeHours', 'Awake 7-day trend', chartColors.amber),
     {
-      ...rollingSeries(daily, 'totalSleepHours', 'Total sleep 7-day avg', chartColors.ink),
+      ...rollingSeries(daily, 'totalSleepHours', 'Total sleep 7-day trend', chartColors.ink),
       showInLegend: false,
       tooltipOnly: true
     }
@@ -355,7 +359,7 @@
         strokeWidth: 1.35
       },
       {
-        ...rollingSeries(sourceDaily, key, `${label} 7-day avg`, color),
+        ...rollingSeries(sourceDaily, key, `${label} 7-day trend`, color),
         strokeWidth: 3.6
       }
     ];
@@ -379,19 +383,29 @@
         strokeWidth: 1.2
       },
       {
-        ...rollingSeries(sourceDaily, key, `${label} (7-day MA)`, color),
+        ...rollingSeries(sourceDaily, key, `${label} (7-day trend)`, color),
         strokeWidth: 3.7
       },
-      averageLineSeries(sourceDaily, key, `Avg ${label}: ${avg === null ? 'n/a' : labelFormatter(avg)}`, color)
+      averageLineSeries(sourceDaily, key, label, color, avg === null ? null : labelFormatter(avg))
     ];
   }
 
-  function averageLineSeries(sourceDaily: DailyMetric[], key: keyof DailyMetric, label: string, color: string): ChartSeries {
+  function averageLineSeries(
+    sourceDaily: DailyMetric[],
+    key: keyof DailyMetric,
+    label: string,
+    color: string,
+    formattedAverage: string | null
+  ): ChartSeries {
     const y = averageForKey(sourceDaily, key);
+    const averageLabel = label.replace(/^Average\s+/i, '');
+    const seriesLabel = `Avg ${averageLabel}`;
     return {
-      label,
+      averageCallout: formattedAverage ? { label: averageLabel, value: formattedAverage } : undefined,
+      label: formattedAverage ? `${seriesLabel}: ${formattedAverage}` : seriesLabel,
       color,
       opacity: 0.72,
+      showInLegend: false,
       showPoints: false,
       strokeDasharray: '6 4',
       strokeWidth: 1.6,
@@ -698,10 +712,10 @@
             <LineChart title="Daily steps" series={stepSeries} yFormatter={(value) => value.toLocaleString()} xFormatter={compactDate} minY={0} />
           </div>
           <div class="panel">
-            <LineChart title="Calories (active vs total, 7-day MA)" series={calorieSeries} yFormatter={(value) => value.toFixed(0)} xFormatter={compactDate} minY={0} />
+            <LineChart title="Calories (active vs total, 7-day trend)" series={calorieSeries} yFormatter={(value) => value.toFixed(0)} xFormatter={compactDate} minY={0} />
           </div>
           <div class="panel wide">
-            <LineChart title="Activity time breakdown (hours, 7-day MA)" series={activityTimeSeries} yFormatter={(value) => `${value.toFixed(1)}h`} xFormatter={compactDate} minY={0} />
+            <LineChart title="Activity time breakdown (hours, 7-day trend)" series={activityTimeSeries} yFormatter={(value) => `${value.toFixed(1)}h`} xFormatter={compactDate} minY={0} />
           </div>
           <InsightPanel title="Activity readout" insights={summary.insights.activity} />
         </div>
