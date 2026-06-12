@@ -43,6 +43,15 @@ export async function saveLocalDataset(dataset: StoredDataset) {
   }
 }
 
+export async function deleteLocalDataset(id: string) {
+  const db = await openDatabase();
+  try {
+    await requestToPromise(db.transaction(DATASET_STORE, 'readwrite').objectStore(DATASET_STORE).delete(id));
+  } finally {
+    db.close();
+  }
+}
+
 function openDatabase() {
   const indexedDB = globalThis.indexedDB;
   if (!indexedDB) {

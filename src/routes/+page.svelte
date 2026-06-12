@@ -7,8 +7,8 @@
     Footprints,
     HeartPulse,
     Moon,
-    RefreshCw,
     ShieldCheck,
+    Trash2,
     UploadCloud,
     Wind,
     Zap
@@ -18,8 +18,14 @@
   import LineChart from '$lib/components/LineChart.svelte';
   import MetricCard from '$lib/components/MetricCard.svelte';
   import StateHeatmap from '$lib/components/StateHeatmap.svelte';
-  import demoSummary from '$lib/data/demo-summary.json';
-  import { clearCurrentDatasetId, getCurrentDatasetId, loadLocalDataset, saveLocalDataset, setCurrentDatasetId } from '$lib/oura/browser-storage';
+  import {
+    clearCurrentDatasetId,
+    deleteLocalDataset,
+    getCurrentDatasetId,
+    loadLocalDataset,
+    saveLocalDataset,
+    setCurrentDatasetId
+  } from '$lib/oura/browser-storage';
   import { parseOuraZip } from '$lib/oura/parse';
   import type { DailyMetric, OuraSummary, SectionKey } from '$lib/oura/types';
 
@@ -38,6 +44,37 @@
   };
 
   const MAX_UPLOAD_BYTES = 75 * 1024 * 1024;
+  const chartDataKeys: Array<keyof DailyMetric> = [
+    'totalSleepHours',
+    'timeInBedHours',
+    'deepSleepHours',
+    'remSleepHours',
+    'awakeHours',
+    'sleepScore',
+    'latencyMinutes',
+    'bedtimeStartHour',
+    'wakeTimeHour',
+    'averageHeartRate',
+    'lowestHeartRate',
+    'averageHrv',
+    'averageBreath',
+    'steps',
+    'activeCalories',
+    'totalCalories',
+    'lowActivityHours',
+    'mediumActivityHours',
+    'highActivityHours',
+    'sedentaryHours',
+    'restingHours',
+    'stressHighHours',
+    'recoveryHighHours',
+    'spo2',
+    'breathingDisturbanceIndex',
+    'vascularAge',
+    'awakeHeartRate',
+    'workoutHeartRate',
+    'restHeartRate'
+  ];
 
   const sections: Array<{ key: SectionKey; label: string; icon: typeof Moon; color: string }> = [
     { key: 'sleep', label: 'Sleep', icon: Moon, color: '#2563eb' },
@@ -68,14 +105,16 @@
   };
   const stressSummaryKeys = ['restored', 'normal', 'stressful', 'high'] as const;
 
-  let summary: OuraSummary = demoSummary as OuraSummary;
+  let summary: OuraSummary | null = null;
   let activeSection: SectionKey = 'sleep';
-  let uploadState: 'idle' | 'uploading' | 'done' | 'error' = 'idle';
-  let uploadMessage = 'Demo export loaded';
+  let uploadState: 'idle' | 'uploading' | 'revealing' | 'done' | 'error' = 'idle';
+  let uploadMessage = '';
   let storedDatasetId = '';
   let fileInput: HTMLInputElement;
 
   onMount(async () => {
+    if (import.meta.env.DEV && (await loadVisualFixture())) return;
+
     storedDatasetId = getCurrentDatasetId();
 
     if (storedDatasetId) {
@@ -83,30 +122,31 @@
     }
   });
 
-  $: daily = summary.daily;
-  $: averages = summary.averages;
+  $: hasLocalData = summary !== null;
+  $: daily = summary?.daily ?? [];
+  $: averages = summary?.averages ?? {};
   $: currentSection = sections.find((section) => section.key === activeSection) ?? sections[0];
-  $: storagePath = summary.storage
+  $: storagePath = summary?.storage
     ? `browser:indexeddb://${summary.storage.datasetId}/${summary.storage.sourceName}`
-    : 'demo:data.zip summary';
+    : 'browser:indexeddb://current';
 
   $: sleepDurationSeries = [
-    ...rawAndAverageSeries('totalSleepHours', 'Sleep', chartColors.blue),
-    ...rawAndAverageSeries('timeInBedHours', 'In bed', chartColors.gray)
+    ...rawAndAverageSeries(daily, 'totalSleepHours', 'Sleep', chartColors.blue),
+    ...rawAndAverageSeries(daily, 'timeInBedHours', 'In bed', chartColors.gray)
   ];
-  $: sleepScoreSeries = rawAndAverageSeries('sleepScore', 'Sleep score', chartColors.blue);
-  $: latencySeries = rawAndAverageSeries('latencyMinutes', 'Latency', chartColors.green);
-  $: latencyMaxY = maxForKey('latencyMinutes', 50, 10);
+  $: sleepScoreSeries = rawAndAverageSeries(daily, 'sleepScore', 'Sleep score', chartColors.blue);
+  $: latencySeries = rawAndAverageSeries(daily, 'latencyMinutes', 'Latency', chartColors.green);
+  $: latencyMaxY = maxForKey(daily, 'latencyMinutes', 50, 10);
   $: sleepTimingSeries = [
-    ...rawAndAverageSeries('bedtimeStartHour', 'Bedtime', chartColors.violet),
-    ...rawAndAverageSeries('wakeTimeHour', 'Wake', chartColors.amber)
+    ...rawAndAverageSeries(daily, 'bedtimeStartHour', 'Bedtime', chartColors.violet),
+    ...rawAndAverageSeries(daily, 'wakeTimeHour', 'Wake', chartColors.amber)
   ];
   $: sleepStageSeries = [
-    rollingSeries('deepSleepHours', 'Deep 7-day avg', chartColors.blue),
-    rollingSeries('remSleepHours', 'REM 7-day avg', chartColors.violet),
-    rollingSeries('awakeHours', 'Awake 7-day avg', chartColors.amber),
+    rollingSeries(daily, 'deepSleepHours', 'Deep 7-day avg', chartColors.blue),
+    rollingSeries(daily, 'remSleepHours', 'REM 7-day avg', chartColors.violet),
+    rollingSeries(daily, 'awakeHours', 'Awake 7-day avg', chartColors.amber),
     {
-      ...rollingSeries('totalSleepHours', 'Total sleep 7-day avg', chartColors.ink),
+      ...rollingSeries(daily, 'totalSleepHours', 'Total sleep 7-day avg', chartColors.ink),
       showInLegend: false,
       tooltipOnly: true
     }
@@ -120,51 +160,51 @@
   ];
 
   $: heartSeries = [
-    ...rawMovingAverageAverageSeries('averageHeartRate', 'Average HR', chartColors.rose, (value) => `${value.toFixed(1)} bpm`),
-    ...rawMovingAverageAverageSeries('lowestHeartRate', 'Lowest HR', chartColors.blue, (value) => `${value.toFixed(1)} bpm`)
+    ...rawMovingAverageAverageSeries(daily, 'averageHeartRate', 'Average HR', chartColors.rose, (value) => `${value.toFixed(1)} bpm`),
+    ...rawMovingAverageAverageSeries(daily, 'lowestHeartRate', 'Lowest HR', chartColors.blue, (value) => `${value.toFixed(1)} bpm`)
   ];
-  $: hrvSeries = rawMovingAverageAverageSeries('averageHrv', 'HRV', chartColors.blue, (value) => `${value.toFixed(1)} ms`);
+  $: hrvSeries = rawMovingAverageAverageSeries(daily, 'averageHrv', 'HRV', chartColors.blue, (value) => `${value.toFixed(1)} ms`);
   $: daytimeHeartSeries = [
-    ...rawMovingAverageAverageSeries('awakeHeartRate', 'Awake', chartColors.orange, (value) => `${value.toFixed(1)} bpm`),
-    ...rawMovingAverageAverageSeries('restHeartRate', 'Rest', chartColors.green, (value) => `${value.toFixed(1)} bpm`),
-    ...rawMovingAverageAverageSeries('workoutHeartRate', 'Workout', chartColors.rose, (value) => `${value.toFixed(1)} bpm`)
+    ...rawMovingAverageAverageSeries(daily, 'awakeHeartRate', 'Awake', chartColors.orange, (value) => `${value.toFixed(1)} bpm`),
+    ...rawMovingAverageAverageSeries(daily, 'restHeartRate', 'Rest', chartColors.green, (value) => `${value.toFixed(1)} bpm`),
+    ...rawMovingAverageAverageSeries(daily, 'workoutHeartRate', 'Workout', chartColors.rose, (value) => `${value.toFixed(1)} bpm`)
   ];
-  $: vascularAgeSeries = rawMovingAverageAverageSeries('vascularAge', 'Vascular age', chartColors.pink, (value) => value.toFixed(1));
+  $: vascularAgeSeries = rawMovingAverageAverageSeries(daily, 'vascularAge', 'Vascular age', chartColors.pink, (value) => value.toFixed(1));
 
-  $: stepSeries = rawMovingAverageAverageSeries('steps', 'Steps', chartColors.green, (value) =>
+  $: stepSeries = rawMovingAverageAverageSeries(daily, 'steps', 'Steps', chartColors.green, (value) =>
     value.toLocaleString('en-US', { maximumFractionDigits: 0 })
   );
   $: calorieSeries = [
-    ...rawMovingAverageAverageSeries('activeCalories', 'Active calories', chartColors.rose, (value) =>
+    ...rawMovingAverageAverageSeries(daily, 'activeCalories', 'Active calories', chartColors.rose, (value) =>
       value.toLocaleString('en-US', { maximumFractionDigits: 0 })
     ),
-    ...rawMovingAverageAverageSeries('totalCalories', 'Total calories', chartColors.amber, (value) =>
+    ...rawMovingAverageAverageSeries(daily, 'totalCalories', 'Total calories', chartColors.amber, (value) =>
       value.toLocaleString('en-US', { maximumFractionDigits: 0 })
     )
   ];
   $: activityTimeSeries = [
-    ...rawMovingAverageAverageSeries('highActivityHours', 'High', chartColors.rose, (value) => `${value.toFixed(1)}h`),
-    ...rawMovingAverageAverageSeries('mediumActivityHours', 'Medium', chartColors.amber, (value) => `${value.toFixed(1)}h`),
-    ...rawMovingAverageAverageSeries('lowActivityHours', 'Low', chartColors.blue, (value) => `${value.toFixed(1)}h`),
-    ...rawMovingAverageAverageSeries('sedentaryHours', 'Sedentary', chartColors.violet, (value) => `${value.toFixed(1)}h`),
-    ...rawMovingAverageAverageSeries('restingHours', 'Resting', chartColors.gray, (value) => `${value.toFixed(1)}h`)
+    ...rawMovingAverageAverageSeries(daily, 'highActivityHours', 'High', chartColors.rose, (value) => `${value.toFixed(1)}h`),
+    ...rawMovingAverageAverageSeries(daily, 'mediumActivityHours', 'Medium', chartColors.amber, (value) => `${value.toFixed(1)}h`),
+    ...rawMovingAverageAverageSeries(daily, 'lowActivityHours', 'Low', chartColors.blue, (value) => `${value.toFixed(1)}h`),
+    ...rawMovingAverageAverageSeries(daily, 'sedentaryHours', 'Sedentary', chartColors.violet, (value) => `${value.toFixed(1)}h`),
+    ...rawMovingAverageAverageSeries(daily, 'restingHours', 'Resting', chartColors.gray, (value) => `${value.toFixed(1)}h`)
   ];
 
   $: stressSeries = [
-    ...rawMovingAverageAverageSeries('stressHighHours', 'Stress', chartColors.rose, (value) => `${value.toFixed(1)}h`),
-    ...rawMovingAverageAverageSeries('recoveryHighHours', 'Recovery', chartColors.green, (value) => `${value.toFixed(1)}h`)
+    ...rawMovingAverageAverageSeries(daily, 'stressHighHours', 'Stress', chartColors.rose, (value) => `${value.toFixed(1)}h`),
+    ...rawMovingAverageAverageSeries(daily, 'recoveryHighHours', 'Recovery', chartColors.green, (value) => `${value.toFixed(1)}h`)
   ];
   $: stressSummaryPoints = daily.map((day) => ({
     x: day.day,
     state: day.stressSummary
   }));
-  $: stressSummaryTrendSeries = rollingStressSummarySeries();
+  $: stressSummaryTrendSeries = rollingStressSummarySeries(daily);
 
-  $: spo2Series = rawMovingAverageAverageSeries('spo2', 'SpO2', chartColors.cyan, (value) => `${value.toFixed(1)}%`);
-  $: breathingDisturbanceSeries = rawMovingAverageAverageSeries('breathingDisturbanceIndex', 'BDI', chartColors.cyan, (value) =>
+  $: spo2Series = rawMovingAverageAverageSeries(daily, 'spo2', 'SpO2', chartColors.cyan, (value) => `${value.toFixed(1)}%`);
+  $: breathingDisturbanceSeries = rawMovingAverageAverageSeries(daily, 'breathingDisturbanceIndex', 'BDI', chartColors.cyan, (value) =>
     value.toFixed(1)
   );
-  $: breathSeries = rawMovingAverageAverageSeries('averageBreath', 'Breath rate', chartColors.cyan, (value) => `${value.toFixed(1)}/min`);
+  $: breathSeries = rawMovingAverageAverageSeries(daily, 'averageBreath', 'Breath rate', chartColors.cyan, (value) => `${value.toFixed(1)}/min`);
   $: spo2Bands = [
     { from: 85, to: 90, color: '#fee2e2' },
     { from: 90, to: 95, color: '#fef3c7' },
@@ -183,10 +223,17 @@
       uploadMessage = 'Loading local export';
       const dataset = await loadLocalDataset(storedDatasetId);
       if (!dataset) throw new Error('Saved export was not found in this browser.');
+      if (!hasGraphableMetrics(dataset.summary)) {
+        await deleteLocalDataset(storedDatasetId);
+        throw new Error('Saved export has no chart metrics. Re-upload data.zip to reprocess it.');
+      }
       summary = dataset.summary;
       uploadState = 'done';
       uploadMessage = 'Local export loaded';
     } catch (error) {
+      summary = null;
+      storedDatasetId = '';
+      if (browser) clearCurrentDatasetId();
       uploadState = 'error';
       uploadMessage = error instanceof Error ? error.message : 'Local export could not be loaded.';
     }
@@ -207,6 +254,13 @@
 
       const bytes = await file.arrayBuffer();
       const parsedSummary = await parseOuraZip(bytes, { sourceName: file.name });
+      if (!parsedSummary.daily.length) {
+        throw new Error('No daily Oura records were found in this export.');
+      }
+      if (!hasGraphableMetrics(parsedSummary)) {
+        throw new Error('No numeric chart metrics were found in this export.');
+      }
+
       const datasetId = crypto.randomUUID();
       const savedAt = new Date().toISOString();
 
@@ -232,8 +286,11 @@
 
       summary = parsedSummary;
       storedDatasetId = datasetId;
-      uploadState = 'done';
       uploadMessage = 'Export processed and saved locally';
+      uploadState = 'revealing';
+      window.setTimeout(() => {
+        uploadState = 'done';
+      }, 720);
     } catch (error) {
       uploadState = 'error';
       uploadMessage = error instanceof Error ? error.message : 'Local processing failed.';
@@ -242,12 +299,16 @@
     }
   }
 
-  function resetDemo() {
-    summary = demoSummary as OuraSummary;
+  async function deleteCurrentDataset() {
+    const datasetId = storedDatasetId || summary?.storage?.datasetId;
+    if (datasetId) {
+      await deleteLocalDataset(datasetId);
+    }
+    summary = null;
     storedDatasetId = '';
     if (browser) clearCurrentDatasetId();
     uploadState = 'idle';
-    uploadMessage = 'Demo export loaded';
+    uploadMessage = '';
   }
 
   function handleDrop(event: DragEvent) {
@@ -255,27 +316,27 @@
     void uploadFile(event.dataTransfer?.files?.[0]);
   }
 
-  function seriesFor(key: keyof DailyMetric, label: string, color: string): ChartSeries {
+  function seriesFor(sourceDaily: DailyMetric[], key: keyof DailyMetric, label: string, color: string): ChartSeries {
     return {
       label,
       color,
-      values: daily.map((day) => ({
+      values: sourceDaily.map((day) => ({
         x: day.day,
         y: numeric(day[key])
       }))
     };
   }
 
-  function rollingSeries(key: keyof DailyMetric, label: string, color: string, windowSize = 7): ChartSeries {
+  function rollingSeries(sourceDaily: DailyMetric[], key: keyof DailyMetric, label: string, color: string, windowSize = 7): ChartSeries {
     return {
       label,
       color,
       showPoints: 'hover',
       strokeWidth: 3.4,
-      values: daily.map((day, index) => ({
+      values: sourceDaily.map((day, index) => ({
         x: day.day,
         y: average(
-          daily
+          sourceDaily
             .slice(Math.max(0, index - windowSize + 1), index + 1)
             .map((entry) => numeric(entry[key]))
         )
@@ -283,10 +344,10 @@
     };
   }
 
-  function rawAndAverageSeries(key: keyof DailyMetric, label: string, color: string): ChartSeries[] {
+  function rawAndAverageSeries(sourceDaily: DailyMetric[], key: keyof DailyMetric, label: string, color: string): ChartSeries[] {
     return [
       {
-        ...seriesFor(key, `${label} raw`, color),
+        ...seriesFor(sourceDaily, key, `${label} raw`, color),
         opacity: 0.32,
         pointOpacity: 0.42,
         pointRadius: 2.4,
@@ -294,22 +355,23 @@
         strokeWidth: 1.35
       },
       {
-        ...rollingSeries(key, `${label} 7-day avg`, color),
+        ...rollingSeries(sourceDaily, key, `${label} 7-day avg`, color),
         strokeWidth: 3.6
       }
     ];
   }
 
   function rawMovingAverageAverageSeries(
+    sourceDaily: DailyMetric[],
     key: keyof DailyMetric,
     label: string,
     color: string,
     labelFormatter: (value: number) => string = (value) => value.toFixed(1)
   ): ChartSeries[] {
-    const avg = averageForKey(key);
+    const avg = averageForKey(sourceDaily, key);
     return [
       {
-        ...seriesFor(key, `${label} (raw)`, color),
+        ...seriesFor(sourceDaily, key, `${label} (raw)`, color),
         opacity: 0.3,
         pointOpacity: 0.45,
         pointRadius: 2,
@@ -317,15 +379,15 @@
         strokeWidth: 1.2
       },
       {
-        ...rollingSeries(key, `${label} (7-day MA)`, color),
+        ...rollingSeries(sourceDaily, key, `${label} (7-day MA)`, color),
         strokeWidth: 3.7
       },
-      averageLineSeries(key, `Avg ${label}: ${avg === null ? 'n/a' : labelFormatter(avg)}`, color)
+      averageLineSeries(sourceDaily, key, `Avg ${label}: ${avg === null ? 'n/a' : labelFormatter(avg)}`, color)
     ];
   }
 
-  function averageLineSeries(key: keyof DailyMetric, label: string, color: string): ChartSeries {
-    const y = averageForKey(key);
+  function averageLineSeries(sourceDaily: DailyMetric[], key: keyof DailyMetric, label: string, color: string): ChartSeries {
+    const y = averageForKey(sourceDaily, key);
     return {
       label,
       color,
@@ -333,25 +395,25 @@
       showPoints: false,
       strokeDasharray: '6 4',
       strokeWidth: 1.6,
-      values: daily.map((day) => ({
+      values: sourceDaily.map((day) => ({
         x: day.day,
         y
       }))
     };
   }
 
-  function averageForKey(key: keyof DailyMetric) {
-    return average(daily.map((day) => numeric(day[key])));
+  function averageForKey(sourceDaily: DailyMetric[], key: keyof DailyMetric) {
+    return average(sourceDaily.map((day) => numeric(day[key])));
   }
 
-  function rollingStressSummarySeries(): ChartSeries[] {
+  function rollingStressSummarySeries(sourceDaily: DailyMetric[]): ChartSeries[] {
     return stressSummaryKeys.map((key) => ({
       label: stressSummaryStyles[key].label,
       color: stressSummaryStyles[key].color,
       showPoints: 'hover',
       strokeWidth: 2.6,
-      values: daily.map((day, index) => {
-        const window = daily.slice(Math.max(0, index - 6), index + 1);
+      values: sourceDaily.map((day, index) => {
+        const window = sourceDaily.slice(Math.max(0, index - 6), index + 1);
         const count = window.filter((entry) => entry.stressSummary === key).length;
         return {
           x: day.day,
@@ -361,14 +423,44 @@
     }));
   }
 
-  function maxForKey(key: keyof DailyMetric, minimum: number, interval: number) {
-    const values = daily.map((day) => numeric(day[key])).filter((value): value is number => value !== null);
+  function maxForKey(sourceDaily: DailyMetric[], key: keyof DailyMetric, minimum: number, interval: number) {
+    const values = sourceDaily.map((day) => numeric(day[key])).filter((value): value is number => value !== null);
     if (!values.length) return minimum;
     return Math.max(minimum, Math.ceil(Math.max(...values) / interval) * interval);
   }
 
   function numeric(value: unknown) {
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  }
+
+  function hasGraphableMetrics(candidate: OuraSummary) {
+    return candidate.daily.some(
+      (day) => chartDataKeys.some((key) => numeric(day[key]) !== null) || Boolean(day.stressSummary)
+    );
+  }
+
+  async function loadVisualFixture() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('visualFixture') !== 'dev-summary') return false;
+
+    try {
+      const response = await fetch('/__openoura_visual_summary');
+      if (!response.ok) throw new Error('Visual fixture summary could not be loaded.');
+      const parsedSummary = (await response.json()) as OuraSummary;
+      if (!parsedSummary.daily?.length || !hasGraphableMetrics(parsedSummary)) {
+        throw new Error('Visual fixture has no graphable Oura records.');
+      }
+
+      summary = parsedSummary;
+      uploadState = 'done';
+      uploadMessage = 'Visual fixture loaded';
+      return true;
+    } catch (error) {
+      summary = null;
+      uploadState = 'error';
+      uploadMessage = error instanceof Error ? error.message : 'Visual fixture could not be loaded.';
+      return true;
+    }
   }
 
   function average(values: Array<number | null>) {
@@ -418,7 +510,37 @@
   <title>OpenOura</title>
 </svelte:head>
 
-<main class="app-shell">
+<input
+  bind:this={fileInput}
+  class="visually-hidden"
+  type="file"
+  accept=".zip,application/zip"
+  on:change={(event) => uploadFile((event.currentTarget as HTMLInputElement).files?.[0])}
+/>
+
+{#if !summary}
+  <main class="upload-shell" class:processing={uploadState === 'uploading'}>
+    <div class="upload-aura" aria-hidden="true">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+
+    <section class="upload-stage" aria-label="Choose Oura export">
+      <div class="upload-mark"><Activity size={24} strokeWidth={2.5} /></div>
+      <h1>OpenOura</h1>
+      <button type="button" class="choose-button" on:click={() => fileInput?.click()} disabled={uploadState === 'uploading'}>
+        <UploadCloud size={20} />
+        <span>{uploadState === 'uploading' ? 'Processing data.zip' : 'Choose data.zip export'}</span>
+      </button>
+      {#if uploadState === 'error'}
+        <p class="upload-error">{uploadMessage}</p>
+      {/if}
+    </section>
+  </main>
+{:else}
+{#key summary.storage?.datasetId ?? summary.generatedAt}
+<main class="app-shell" class:dashboard-revealing={uploadState === 'revealing'}>
   <aside class="rail">
     <div class="brand">
       <div class="mark"><Activity size={20} strokeWidth={2.4} /></div>
@@ -458,20 +580,15 @@
       </div>
 
       <div class="actions">
-        <button type="button" class="icon-button" title="Reset to demo data" on:click={resetDemo}>
-          <RefreshCw size={18} />
-        </button>
-        <button type="button" class="upload-button" on:click={() => fileInput.click()} disabled={uploadState === 'uploading'}>
+        {#if hasLocalData}
+          <button type="button" class="icon-button danger" title="Delete local data" on:click={deleteCurrentDataset} disabled={uploadState === 'uploading'}>
+            <Trash2 size={18} />
+          </button>
+        {/if}
+        <button type="button" class="upload-button" on:click={() => fileInput?.click()} disabled={uploadState === 'uploading'}>
           <UploadCloud size={18} />
           <span>{uploadState === 'uploading' ? 'Processing' : 'Upload data.zip'}</span>
         </button>
-        <input
-          bind:this={fileInput}
-          class="visually-hidden"
-          type="file"
-          accept=".zip,application/zip"
-          on:change={(event) => uploadFile((event.currentTarget as HTMLInputElement).files?.[0])}
-        />
       </div>
     </header>
 
@@ -479,7 +596,7 @@
       class="status-band"
       type="button"
       aria-label="Drop or choose Oura data zip"
-      on:click={() => fileInput.click()}
+      on:click={() => fileInput?.click()}
       on:dragover|preventDefault
       on:drop={handleDrop}
     >
@@ -646,6 +763,8 @@
     </footer>
   </section>
 </main>
+{/key}
+{/if}
 
 <style>
   :global(*) {
@@ -669,6 +788,133 @@
     display: grid;
     grid-template-columns: 232px minmax(0, 1fr);
     min-height: 100vh;
+  }
+
+  .app-shell.dashboard-revealing {
+    animation: dashboardReveal 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .upload-shell {
+    align-items: center;
+    background:
+      radial-gradient(circle at 18% 22%, rgba(37, 99, 235, 0.18), transparent 30%),
+      radial-gradient(circle at 82% 18%, rgba(15, 159, 110, 0.18), transparent 26%),
+      linear-gradient(135deg, #f8fafc 0%, #eef4f8 48%, #f9fafb 100%);
+    display: grid;
+    isolation: isolate;
+    justify-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    padding: 24px;
+    position: relative;
+  }
+
+  .upload-shell::before {
+    background-image:
+      linear-gradient(rgba(17, 24, 39, 0.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(17, 24, 39, 0.055) 1px, transparent 1px);
+    background-size: 42px 42px;
+    content: "";
+    inset: 0;
+    mask-image: radial-gradient(circle at center, #000 0%, transparent 68%);
+    position: absolute;
+    z-index: -2;
+  }
+
+  .upload-aura {
+    aspect-ratio: 1;
+    display: grid;
+    max-width: 620px;
+    position: absolute;
+    width: min(72vw, 620px);
+    z-index: -1;
+  }
+
+  .upload-aura span {
+    border: 1px solid rgba(31, 41, 55, 0.12);
+    border-radius: 50%;
+    grid-area: 1 / 1;
+    transform: scale(var(--scale, 1));
+  }
+
+  .upload-aura span:nth-child(1) {
+    --scale: 0.64;
+    animation: orbitPulse 4.2s ease-in-out infinite;
+    background: rgba(255, 255, 255, 0.54);
+  }
+
+  .upload-aura span:nth-child(2) {
+    --scale: 0.88;
+    animation: orbitPulse 5.8s ease-in-out infinite reverse;
+  }
+
+  .upload-aura span:nth-child(3) {
+    --scale: 1.12;
+    animation: orbitPulse 7.4s ease-in-out infinite;
+  }
+
+  .upload-shell.processing .upload-aura span {
+    animation-duration: 1.35s;
+  }
+
+  .upload-stage {
+    align-items: center;
+    display: grid;
+    gap: 18px;
+    justify-items: center;
+  }
+
+  .upload-stage h1 {
+    font-size: clamp(2.5rem, 8vw, 6rem);
+    line-height: 0.92;
+  }
+
+  .upload-mark {
+    align-items: center;
+    background: #111827;
+    border-radius: 8px;
+    color: #ffffff;
+    display: grid;
+    height: 48px;
+    justify-items: center;
+    width: 48px;
+  }
+
+  .choose-button {
+    align-items: center;
+    background: #111827;
+    border: 1px solid #111827;
+    border-radius: 8px;
+    box-shadow: 0 18px 48px rgba(17, 24, 39, 0.24);
+    color: #ffffff;
+    cursor: pointer;
+    display: inline-flex;
+    font-weight: 800;
+    gap: 10px;
+    min-height: 54px;
+    padding: 0 20px;
+    transition:
+      box-shadow 180ms ease,
+      transform 180ms ease;
+  }
+
+  .choose-button:hover:not(:disabled) {
+    box-shadow: 0 22px 56px rgba(17, 24, 39, 0.28);
+    transform: translateY(-2px);
+  }
+
+  .choose-button:disabled {
+    cursor: wait;
+    opacity: 0.82;
+  }
+
+  .upload-error {
+    color: #be123c;
+    font-size: 0.9rem;
+    font-weight: 720;
+    margin: 0;
+    max-width: min(460px, 90vw);
+    text-align: center;
   }
 
   .rail {
@@ -827,6 +1073,15 @@
     width: 42px;
   }
 
+  .icon-button.danger {
+    color: #be123c;
+  }
+
+  .icon-button.danger:hover {
+    background: #fff1f2;
+    border-color: #fecdd3;
+  }
+
   .upload-button {
     background: #111827;
     color: #ffffff;
@@ -978,6 +1233,33 @@
     max-width: 1420px;
   }
 
+  @keyframes orbitPulse {
+    0%,
+    100% {
+      opacity: 0.72;
+      transform: scale(var(--scale)) rotate(0deg);
+    }
+
+    50% {
+      opacity: 1;
+      transform: scale(calc(var(--scale) + 0.045)) rotate(14deg);
+    }
+  }
+
+  @keyframes dashboardReveal {
+    0% {
+      filter: blur(16px);
+      opacity: 0;
+      transform: translateY(22px) scale(0.985);
+    }
+
+    100% {
+      filter: blur(0);
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
   @media (max-width: 1180px) {
     .metric-grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1046,6 +1328,15 @@
   }
 
   @media (max-width: 560px) {
+    .upload-stage {
+      gap: 14px;
+    }
+
+    .choose-button {
+      justify-content: center;
+      width: min(100%, 300px);
+    }
+
     .metric-grid {
       grid-template-columns: 1fr;
     }

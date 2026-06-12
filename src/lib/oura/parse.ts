@@ -55,7 +55,7 @@ export async function parseOuraZip(input: ArrayBuffer | Uint8Array, options: Par
     const text = await file.async('string');
     const parsed = Papa.parse<CsvRow>(text, {
       header: true,
-      delimiter: ';',
+      delimiter: detectDelimiter(text),
       skipEmptyLines: 'greedy'
     });
 
@@ -282,10 +282,60 @@ function findFile(fileIndex: Map<string, JSZip.JSZipObject>, fileName: string) {
   );
 }
 
+function detectDelimiter(text: string) {
+  const header = text
+    .split(/\r?\n/, 1)[0]
+    ?.trim();
+
+  if (!header) return ',';
+
+  const candidates = [',', ';', '\t', '|'];
+  return candidates.reduce((best, candidate) =>
+    countOccurrences(header, candidate) > countOccurrences(header, best) ? candidate : best
+  );
+}
+
+function countOccurrences(value: string, token: string) {
+  return value.split(token).length - 1;
+}
+
 function numberOrNull(value: unknown) {
   if (value === null || value === undefined || value === '') return null;
-  const parsed = Number(value);
+  const parsed = Number(normalizeNumber(value));
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeNumber(value: unknown) {
+  if (typeof value !== 'string') return value;
+
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  const compact = trimmed.replace(/\s/g, '');
+  const commaCount = countOccurrences(compact, ',');
+  const dotCount = countOccurrences(compact, '.');
+
+  if (commaCount > 0 && dotCount > 0) {
+    const lastComma = compact.lastIndexOf(',');
+    const lastDot = compact.lastIndexOf('.');
+    return lastComma > lastDot
+      ? compact.replace(/\./g, '').replace(',', '.')
+      : compact.replace(/,/g, '');
+  }
+
+  if (commaCount === 1 && dotCount === 0) {
+    const [beforeComma, afterComma] = compact.split(',');
+    if (afterComma.length === 3 && beforeComma.length > 0) {
+      return `${beforeComma}${afterComma}`;
+    }
+    return compact.replace(',', '.');
+  }
+
+  if (commaCount > 1 && dotCount === 0) {
+    return compact.replace(/,/g, '');
+  }
+
+  return compact;
 }
 
 function finiteOrNull(value: unknown) {

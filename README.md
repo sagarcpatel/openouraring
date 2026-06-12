@@ -10,7 +10,7 @@ OpenOura is a SvelteKit dashboard for Oura Ring export ZIPs. It parses exports i
 - Daily stress/recovery time and daytime stress-score distribution.
 - SpO2, breathing disturbance index, and sleep breathing rate.
 
-The default dashboard uses `src/lib/data/demo-summary.json`, generated from the provided `data.zip`. The parser ignores raw location and subscription CSVs for chart analysis.
+The dashboard stays empty until a local Oura export is selected. The parser ignores raw location and subscription CSVs for chart analysis.
 
 ## Browser Storage Model
 
@@ -38,12 +38,4 @@ Build and deploy:
 ```bash
 npm run build
 npm run deploy
-```
-
-## Regenerate Demo Data
-
-If you replace `data.zip`, regenerate the bundled demo summary:
-
-```bash
-npm run data:build
 ```

@@ -9,8 +9,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "deploy": "wrangler deploy",
-    "types": "wrangler types",
-    "data:build": "tsx scripts/build-demo-data.ts"
+    "types": "wrangler types"
   },
   "dependencies": {
     "@lucide/svelte": "^1.17.0",
