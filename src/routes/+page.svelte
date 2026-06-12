@@ -549,6 +549,13 @@
         <UploadCloud size={20} />
         <span>{uploadState === 'uploading' ? 'Processing data.zip' : 'Choose data.zip export'}</span>
       </button>
+      <div class="privacy-note" aria-label="Privacy note">
+        <div class="privacy-note-icon"><ShieldCheck size={22} strokeWidth={2.3} /></div>
+        <div class="privacy-note-copy">
+          <strong>Private by design</strong>
+          <p>All data processing happens locally in your browser. Your ZIP is never sent to a server or stored by OpenOura.</p>
+        </div>
+      </div>
       {#if uploadState === 'error'}
         <p class="upload-error">{uploadMessage}</p>
       {/if}
@@ -922,6 +929,53 @@
   .choose-button:disabled {
     cursor: wait;
     opacity: 0.82;
+  }
+
+  .privacy-note {
+    align-items: center;
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(203, 213, 225, 0.86);
+    border-radius: 8px;
+    box-shadow:
+      0 20px 64px rgba(15, 23, 42, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.88);
+    display: grid;
+    gap: 13px;
+    grid-template-columns: 42px minmax(0, 1fr);
+    margin-top: 2px;
+    max-width: min(500px, calc(100vw - 48px));
+    padding: 14px;
+    text-align: left;
+  }
+
+  .privacy-note-icon {
+    align-items: center;
+    background: #ecfdf5;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+    color: #0f766e;
+    display: grid;
+    height: 42px;
+    justify-items: center;
+    width: 42px;
+  }
+
+  .privacy-note-copy {
+    min-width: 0;
+  }
+
+  .privacy-note strong {
+    color: #111827;
+    display: block;
+    font-size: 0.94rem;
+    line-height: 1.2;
+  }
+
+  .privacy-note p {
+    color: #4b5563;
+    font-size: 0.86rem;
+    line-height: 1.45;
+    margin: 4px 0 0;
   }
 
   .upload-error {
