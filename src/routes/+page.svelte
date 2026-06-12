@@ -117,6 +117,7 @@
   let uploadMessage = '';
   let storedDatasetId = '';
   let showDataHelp = false;
+  let isUploadDragActive = false;
   let fileInput: HTMLInputElement;
 
   onMount(async () => {
@@ -318,7 +319,47 @@
 
   function handleDrop(event: DragEvent) {
     event.preventDefault();
+    resetUploadDragState();
+    if (uploadState === 'uploading') return;
     void uploadFile(event.dataTransfer?.files?.[0]);
+  }
+
+  function handleUploadDragEnter(event: DragEvent) {
+    if (!hasDraggedFiles(event)) return;
+
+    event.preventDefault();
+    if (uploadState === 'uploading') return;
+    isUploadDragActive = true;
+  }
+
+  function handleUploadDragOver(event: DragEvent) {
+    if (!hasDraggedFiles(event)) return;
+
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = uploadState === 'uploading' ? 'none' : 'copy';
+    }
+    if (uploadState !== 'uploading') {
+      isUploadDragActive = true;
+    }
+  }
+
+  function handleUploadDragLeave(event: DragEvent) {
+    if (!hasDraggedFiles(event)) return;
+
+    const uploadShell = event.currentTarget as HTMLElement;
+    const hoveredElement = document.elementFromPoint(event.clientX, event.clientY);
+    if (hoveredElement && uploadShell.contains(hoveredElement)) return;
+
+    resetUploadDragState();
+  }
+
+  function hasDraggedFiles(event: DragEvent) {
+    return Array.from(event.dataTransfer?.types ?? []).includes('Files');
+  }
+
+  function resetUploadDragState() {
+    isUploadDragActive = false;
   }
 
   function seriesFor(sourceDaily: DailyMetric[], key: keyof DailyMetric, label: string, color: string): ChartSeries {
@@ -542,7 +583,16 @@
 />
 
 {#if !summary}
-  <main class="upload-shell" class:processing={uploadState === 'uploading'}>
+  <main
+    class="upload-shell"
+    class:processing={uploadState === 'uploading'}
+    class:dragging={isUploadDragActive}
+    aria-busy={uploadState === 'uploading'}
+    on:dragenter={handleUploadDragEnter}
+    on:dragover={handleUploadDragOver}
+    on:dragleave={handleUploadDragLeave}
+    on:drop={handleDrop}
+  >
     <div class="upload-aura" aria-hidden="true">
       <span></span>
       <span></span>
@@ -863,16 +913,46 @@
     position: relative;
   }
 
+  .upload-shell::before,
+  .upload-shell::after {
+    content: "";
+    inset: 0;
+    position: absolute;
+  }
+
   .upload-shell::before {
     background-image:
       linear-gradient(rgba(17, 24, 39, 0.055) 1px, transparent 1px),
       linear-gradient(90deg, rgba(17, 24, 39, 0.055) 1px, transparent 1px);
     background-size: 42px 42px;
-    content: "";
-    inset: 0;
     mask-image: radial-gradient(circle at center, #000 0%, transparent 68%);
-    position: absolute;
     z-index: -2;
+  }
+
+  .upload-shell::after {
+    background: rgba(37, 99, 235, 0.07);
+    border: 2px dashed rgba(37, 99, 235, 0.58);
+    border-radius: 24px;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+      0 24px 80px rgba(37, 99, 235, 0.14);
+    inset: 18px;
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.985);
+    transition:
+      opacity 160ms ease,
+      transform 160ms ease;
+    z-index: 0;
+  }
+
+  .upload-shell.dragging {
+    cursor: copy;
+  }
+
+  .upload-shell.dragging::after {
+    opacity: 1;
+    transform: scale(1);
   }
 
   .upload-aura {
@@ -916,6 +996,13 @@
     display: grid;
     gap: 18px;
     justify-items: center;
+    position: relative;
+    transition: transform 160ms ease;
+    z-index: 1;
+  }
+
+  .upload-shell.dragging .upload-stage {
+    transform: translateY(-3px);
   }
 
   .upload-stage h1 {
@@ -949,12 +1036,20 @@
     padding: 0 20px;
     transition:
       box-shadow 180ms ease,
+      background 180ms ease,
+      border-color 180ms ease,
       transform 180ms ease;
   }
 
   .choose-button:hover:not(:disabled) {
     box-shadow: 0 22px 56px rgba(17, 24, 39, 0.28);
     transform: translateY(-2px);
+  }
+
+  .upload-shell.dragging .choose-button:not(:disabled) {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+    box-shadow: 0 24px 62px rgba(37, 99, 235, 0.34);
   }
 
   .choose-button:disabled {
@@ -1070,6 +1165,7 @@
     max-width: min(520px, calc(100vw - 48px));
     position: absolute;
     text-align: center;
+    z-index: 1;
   }
 
   .upload-error {
@@ -1453,7 +1549,9 @@
 
     .choose-button,
     .data-help-button,
-    .data-help-close {
+    .data-help-close,
+    .upload-shell::after,
+    .upload-stage {
       transition: none;
     }
   }
