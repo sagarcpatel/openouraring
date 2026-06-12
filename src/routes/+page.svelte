@@ -3,9 +3,6 @@
   import { onMount } from 'svelte';
   import {
     Activity,
-    CalendarDays,
-    ChevronLeft,
-    ChevronRight,
     CircleQuestionMark,
     Database,
     Footprints,
@@ -19,7 +16,6 @@
     X,
     Zap
   } from '@lucide/svelte';
-  import DailyScoreRing from '$lib/components/DailyScoreRing.svelte';
   import Histogram from '$lib/components/Histogram.svelte';
   import InsightPanel from '$lib/components/InsightPanel.svelte';
   import LineChart from '$lib/components/LineChart.svelte';
@@ -52,36 +48,6 @@
     strokeDasharray?: string;
     strokeWidth?: number;
     tooltipOnly?: boolean;
-  };
-
-  type DashboardMode = 'overtime' | 'daily';
-
-  type DailyScoreSummary = {
-    label: string;
-    value: number | null | undefined;
-    detail: string;
-    accent: string;
-  };
-
-  type DailyDetailItem = {
-    label: string;
-    value: string;
-    detail: string;
-    accent: string;
-  };
-
-  type DailyDetailGroup = {
-    title: string;
-    eyebrow: string;
-    items: DailyDetailItem[];
-  };
-
-  type DailyStageItem = {
-    label: string;
-    value: string;
-    detail: string;
-    accent: string;
-    percent: number;
   };
 
   const MAX_UPLOAD_BYTES = 75 * 1024 * 1024;
@@ -148,8 +114,6 @@
 
   let summary: OuraSummary | null = null;
   let activeSection: SectionKey = 'sleep';
-  let dashboardMode: DashboardMode = 'overtime';
-  let selectedDailyIndex = 0;
   let uploadState: 'idle' | 'uploading' | 'revealing' | 'done' | 'error' = 'idle';
   let uploadMessage = '';
   let storedDatasetId = '';
@@ -169,24 +133,12 @@
 
   function setActiveSummary(nextSummary: OuraSummary | null) {
     summary = nextSummary;
-    selectedDailyIndex = nextSummary?.daily.length ? nextSummary.daily.length - 1 : 0;
   }
 
   $: hasLocalData = summary !== null;
   $: daily = summary?.daily ?? [];
   $: averages = summary?.averages ?? {};
   $: currentSection = sections.find((section) => section.key === activeSection) ?? sections[0];
-  $: selectedDailyIndex = clampDailyIndex(selectedDailyIndex, daily.length);
-  $: selectedDay = daily[selectedDailyIndex] ?? null;
-  $: selectedDayTitle = selectedDay ? fullDate(selectedDay.day) : 'No day selected';
-  $: selectedDayDate = selectedDay?.day ?? '';
-  $: selectedDayPosition = daily.length ? `${selectedDailyIndex + 1} of ${daily.length}` : '0 of 0';
-  $: isFirstDailyDay = selectedDailyIndex <= 0;
-  $: isLastDailyDay = selectedDailyIndex >= daily.length - 1;
-  $: dailyScores = selectedDay ? buildDailyScores(selectedDay, averages) : [];
-  $: dailyHeroMetrics = selectedDay ? buildDailyHeroMetrics(selectedDay, averages) : [];
-  $: dailySleepStages = selectedDay ? buildDailySleepStages(selectedDay) : [];
-  $: dailyDetailGroups = selectedDay ? buildDailyDetailGroups(selectedDay, averages) : [];
   $: storagePath = summary?.storage
     ? `browser:indexeddb://${summary.storage.datasetId}/${summary.storage.sourceName}`
     : 'browser:indexeddb://current';
@@ -578,203 +530,6 @@
     return valid.reduce((sum, value) => sum + value, 0) / valid.length;
   }
 
-  function clampDailyIndex(index: number, length: number) {
-    if (!length) return 0;
-    if (!Number.isFinite(index)) return length - 1;
-    return Math.min(Math.max(Math.trunc(index), 0), length - 1);
-  }
-
-  function goToPreviousDay() {
-    selectedDailyIndex = clampDailyIndex(selectedDailyIndex - 1, daily.length);
-  }
-
-  function goToNextDay() {
-    selectedDailyIndex = clampDailyIndex(selectedDailyIndex + 1, daily.length);
-  }
-
-  function toggleDailyDashboard() {
-    if (dashboardMode === 'daily') {
-      dashboardMode = 'overtime';
-      return;
-    }
-
-    const currentDay = daily[clampDailyIndex(selectedDailyIndex, daily.length)];
-    if (!currentDay || !hasDailyData(currentDay)) {
-      const firstDataIndex = daily.findIndex(hasDailyData);
-      if (firstDataIndex !== -1) selectedDailyIndex = firstDataIndex;
-    }
-
-    dashboardMode = 'daily';
-  }
-
-  function hasDailyData(day: DailyMetric) {
-    return Object.entries(day).some(([key, value]) => key !== 'day' && value !== null && value !== undefined && value !== '');
-  }
-
-  function handleDailySelect(event: Event) {
-    const value = (event.currentTarget as HTMLSelectElement).value;
-    const index = daily.findIndex((day) => day.day === value);
-    if (index !== -1) selectedDailyIndex = index;
-  }
-
-  function buildDailyScores(day: DailyMetric, sourceAverages: OuraSummary['averages']): DailyScoreSummary[] {
-    return [
-      {
-        label: 'Sleep score',
-        value: day.sleepScore,
-        detail: scoreComparison(day.sleepScore, sourceAverages.sleepScore),
-        accent: chartColors.blue
-      },
-      {
-        label: 'Readiness score',
-        value: day.readinessScore,
-        detail: scoreComparison(day.readinessScore, sourceAverages.readinessScore),
-        accent: chartColors.green
-      },
-      {
-        label: 'Activity score',
-        value: day.activityScore,
-        detail: scoreComparison(day.activityScore, sourceAverages.activityScore),
-        accent: chartColors.rose
-      }
-    ];
-  }
-
-  function buildDailyHeroMetrics(day: DailyMetric, sourceAverages: OuraSummary['averages']): DailyDetailItem[] {
-    return [
-      detailItem('Sleep', durationLabel(day.totalSleepHours), `${durationLabel(day.timeInBedHours)} in bed`, chartColors.blue),
-      detailItem('HRV', millisecondsValue(day.averageHrv), comparisonLabel(day.averageHrv, sourceAverages.averageHrv, (value) => `${numberLabel(value, 0)} ms`, 0.5), chartColors.violet),
-      detailItem('Night HR', bpmValue(day.averageHeartRate, 1), `${bpmValue(day.lowestHeartRate, 1)} lowest`, chartColors.rose),
-      detailItem('Steps', numberLabel(day.steps, 0), comparisonLabel(day.steps, sourceAverages.steps, (value) => numberLabel(value, 0), 1), chartColors.green),
-      detailItem('Stress high', durationLabel(day.stressHighHours), `${durationLabel(day.recoveryHighHours)} high recovery`, chartColors.amber),
-      detailItem('SpO2', percentValue(day.spo2, 1), comparisonLabel(day.spo2, sourceAverages.spo2, (value) => `${numberLabel(value, 1)}%`, 0.05), chartColors.cyan)
-    ];
-  }
-
-  function buildDailySleepStages(day: DailyMetric): DailyStageItem[] {
-    const denominator = numeric(day.timeInBedHours) ?? numeric(day.totalSleepHours);
-    const stages = [
-      { label: 'Deep sleep', value: numeric(day.deepSleepHours), accent: chartColors.blue },
-      { label: 'REM sleep', value: numeric(day.remSleepHours), accent: chartColors.violet },
-      { label: 'Awake', value: numeric(day.awakeHours), accent: chartColors.amber }
-    ];
-
-    return stages
-      .filter((stage) => stage.value !== null)
-      .map((stage) => {
-        const percent = denominator ? Math.min(Math.max(((stage.value ?? 0) / denominator) * 100, 0), 100) : 0;
-        return {
-          label: stage.label,
-          value: durationLabel(stage.value),
-          detail: denominator ? `${numberLabel(percent, 0)}% of time in bed` : 'No time-in-bed baseline',
-          accent: stage.accent,
-          percent
-        };
-      });
-  }
-
-  function buildDailyDetailGroups(day: DailyMetric, sourceAverages: OuraSummary['averages']): DailyDetailGroup[] {
-    const sleepItems = [
-      detailItem('Total sleep', durationLabel(day.totalSleepHours), durationComparison(day.totalSleepHours, sourceAverages.totalSleepHours), chartColors.blue),
-      detailItem('Time in bed', durationLabel(day.timeInBedHours), durationComparison(day.timeInBedHours, sourceAverages.timeInBedHours), chartColors.gray),
-      detailItem('Sleep efficiency', percentValue(day.efficiency, 0), comparisonLabel(day.efficiency, sourceAverages.efficiency, (value) => `${numberLabel(value, 0)}%`, 0.5), chartColors.green),
-      detailItem('Sleep latency', minutesValue(day.latencyMinutes), comparisonLabel(day.latencyMinutes, sourceAverages.latencyMinutes, (value) => `${numberLabel(value, 0)}m`, 0.5), chartColors.amber),
-      detailItem('Bedtime', clockValue(day.bedtimeStartHour), 'Start of main sleep period', chartColors.violet),
-      detailItem('Wake time', clockValue(day.wakeTimeHour), 'End of main sleep period', chartColors.amber)
-    ];
-
-    const heartItems = [
-      detailItem('Readiness', numberLabel(day.readinessScore, 0), scoreComparison(day.readinessScore, sourceAverages.readinessScore), chartColors.green),
-      detailItem('Average HRV', millisecondsValue(day.averageHrv), comparisonLabel(day.averageHrv, sourceAverages.averageHrv, (value) => `${numberLabel(value, 0)} ms`, 0.5), chartColors.blue),
-      detailItem('Average sleep HR', bpmValue(day.averageHeartRate, 1), comparisonLabel(day.averageHeartRate, sourceAverages.averageHeartRate, (value) => `${numberLabel(value, 1)} bpm`, 0.05), chartColors.rose),
-      detailItem('Lowest sleep HR', bpmValue(day.lowestHeartRate, 1), comparisonLabel(day.lowestHeartRate, sourceAverages.lowestHeartRate, (value) => `${numberLabel(value, 1)} bpm`, 0.05), chartColors.blue),
-      detailItem('Breathing rate', breathValue(day.averageBreath), comparisonLabel(day.averageBreath, sourceAverages.averageBreath, (value) => `${numberLabel(value, 1)}/min`, 0.05), chartColors.cyan),
-      detailItem('Awake HR', bpmValue(day.awakeHeartRate, 1), comparisonLabel(day.awakeHeartRate, sourceAverages.awakeHeartRate, (value) => `${numberLabel(value, 1)} bpm`, 0.05), chartColors.orange),
-      detailItem('Rest HR', bpmValue(day.restHeartRate, 1), comparisonLabel(day.restHeartRate, sourceAverages.restHeartRate, (value) => `${numberLabel(value, 1)} bpm`, 0.05), chartColors.green),
-      detailItem('Workout HR', bpmValue(day.workoutHeartRate, 1), comparisonLabel(day.workoutHeartRate, sourceAverages.workoutHeartRate, (value) => `${numberLabel(value, 1)} bpm`, 0.05), chartColors.rose)
-    ];
-    addOptionalDetail(heartItems, day.temperatureDeviation, 'Temperature', signedNumberValue(day.temperatureDeviation, 2, ' C'), 'Deviation from baseline', chartColors.amber);
-    addOptionalDetail(heartItems, day.resilienceLevel, 'Resilience', titleLabel(day.resilienceLevel), 'Oura resilience level', chartColors.violet);
-    addOptionalDetail(heartItems, day.vascularAge, 'Vascular age', numberLabel(day.vascularAge, 0), comparisonLabel(day.vascularAge, sourceAverages.vascularAge, (value) => numberLabel(value, 0), 0.5), chartColors.pink);
-    addOptionalDetail(heartItems, day.cardiovascularAge, 'Cardiovascular age', numberLabel(day.cardiovascularAge, 0), 'Smoothed cardiovascular age', chartColors.pink);
-    addOptionalDetail(heartItems, day.pulseWaveVelocity, 'Pulse wave velocity', `${numberLabel(day.pulseWaveVelocity, 1)} m/s`, comparisonLabel(day.pulseWaveVelocity, sourceAverages.pulseWaveVelocity, (value) => `${numberLabel(value, 1)} m/s`, 0.05), chartColors.pink);
-
-    const activityItems = [
-      detailItem('Activity score', numberLabel(day.activityScore, 0), scoreComparison(day.activityScore, sourceAverages.activityScore), chartColors.green),
-      detailItem('Steps', numberLabel(day.steps, 0), comparisonLabel(day.steps, sourceAverages.steps, (value) => numberLabel(value, 0), 1), chartColors.green),
-      detailItem('Active calories', caloriesValue(day.activeCalories), comparisonLabel(day.activeCalories, sourceAverages.activeCalories, (value) => `${numberLabel(value, 0)} kcal`, 1), chartColors.rose),
-      detailItem('Total calories', caloriesValue(day.totalCalories), comparisonLabel(day.totalCalories, sourceAverages.totalCalories, (value) => `${numberLabel(value, 0)} kcal`, 1), chartColors.amber),
-      detailItem('High activity', durationLabel(day.highActivityHours), 'High-intensity movement time', chartColors.rose),
-      detailItem('Medium activity', durationLabel(day.mediumActivityHours), 'Medium-intensity movement time', chartColors.amber),
-      detailItem('Low activity', durationLabel(day.lowActivityHours), 'Low-intensity movement time', chartColors.blue),
-      detailItem('Sedentary', durationLabel(day.sedentaryHours), 'Sedentary time', chartColors.violet),
-      detailItem('Resting', durationLabel(day.restingHours), durationComparison(day.restingHours, sourceAverages.restingHours), chartColors.gray)
-    ];
-    addOptionalDetail(activityItems, day.vo2Max, 'VO2 max', `${numberLabel(day.vo2Max, 1)} ml/kg/min`, comparisonLabel(day.vo2Max, sourceAverages.vo2Max, (value) => `${numberLabel(value, 1)} ml/kg/min`, 0.05), chartColors.cyan);
-
-    const stressOxygenItems = [
-      detailItem('High stress', durationLabel(day.stressHighHours), durationComparison(day.stressHighHours, sourceAverages.stressHighHours), chartColors.rose),
-      detailItem('High recovery', durationLabel(day.recoveryHighHours), durationComparison(day.recoveryHighHours, sourceAverages.recoveryHighHours), chartColors.green),
-      detailItem('Stress summary', titleLabel(day.stressSummary), 'Daily stress classification', chartColors.amber),
-      detailItem('Average SpO2', percentValue(day.spo2, 1), comparisonLabel(day.spo2, sourceAverages.spo2, (value) => `${numberLabel(value, 1)}%`, 0.05), chartColors.cyan),
-      detailItem('Breathing disturbance', numberLabel(day.breathingDisturbanceIndex, 1), comparisonLabel(day.breathingDisturbanceIndex, sourceAverages.breathingDisturbanceIndex, (value) => numberLabel(value, 1), 0.05), chartColors.cyan)
-    ];
-
-    return [
-      { title: 'Sleep details', eyebrow: 'Night', items: sleepItems },
-      { title: 'Heart and readiness', eyebrow: 'Recovery', items: heartItems },
-      { title: 'Activity', eyebrow: 'Movement', items: activityItems },
-      { title: 'Stress and oxygen', eyebrow: 'Daytime', items: stressOxygenItems }
-    ];
-  }
-
-  function detailItem(label: string, value: string, detail: string, accent: string): DailyDetailItem {
-    return { label, value, detail, accent };
-  }
-
-  function addOptionalDetail(
-    items: DailyDetailItem[],
-    rawValue: number | string | null | undefined,
-    label: string,
-    value: string,
-    detail: string,
-    accent: string
-  ) {
-    if (rawValue === null || rawValue === undefined || rawValue === '') return;
-    items.push(detailItem(label, value, detail, accent));
-  }
-
-  function comparisonLabel(
-    value: number | null | undefined,
-    averageValue: number | null | undefined,
-    formatter: (value: number) => string,
-    threshold = 0.05
-  ) {
-    if (value === null || value === undefined || averageValue === null || averageValue === undefined) return 'No average comparison';
-    const delta = value - averageValue;
-    if (Math.abs(delta) <= threshold) return 'Matches avg';
-    return `${formatter(Math.abs(delta))} ${delta > 0 ? 'above' : 'below'} avg`;
-  }
-
-  function scoreComparison(value: number | null | undefined, averageValue: number | null | undefined) {
-    return comparisonLabel(value, averageValue, (delta) => numberLabel(delta, 0), 0.5);
-  }
-
-  function durationComparison(value: number | null | undefined, averageValue: number | null | undefined) {
-    return comparisonLabel(value, averageValue, (delta) => durationLabel(delta), 1 / 60);
-  }
-
-  function fullDate(day: string) {
-    const date = new Date(`${day}T00:00:00`);
-    if (Number.isNaN(date.getTime())) return day;
-    return new Intl.DateTimeFormat('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric'
-    }).format(date);
-  }
-
   function shortDate(day: string) {
     return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(`${day}T00:00:00`));
   }
@@ -800,36 +555,6 @@
     });
   }
 
-  function percentValue(value: number | null | undefined, digits = 0) {
-    return value === null || value === undefined ? 'n/a' : `${numberLabel(value, digits)}%`;
-  }
-
-  function bpmValue(value: number | null | undefined, digits = 0) {
-    return value === null || value === undefined ? 'n/a' : `${numberLabel(value, digits)} bpm`;
-  }
-
-  function millisecondsValue(value: number | null | undefined) {
-    return value === null || value === undefined ? 'n/a' : `${numberLabel(value, 0)} ms`;
-  }
-
-  function minutesValue(value: number | null | undefined) {
-    return value === null || value === undefined ? 'n/a' : `${numberLabel(value, 0)}m`;
-  }
-
-  function caloriesValue(value: number | null | undefined) {
-    return value === null || value === undefined ? 'n/a' : `${numberLabel(value, 0)} kcal`;
-  }
-
-  function breathValue(value: number | null | undefined) {
-    return value === null || value === undefined ? 'n/a' : `${numberLabel(value, 1)}/min`;
-  }
-
-  function signedNumberValue(value: number | null | undefined, digits = 1, suffix = '') {
-    if (value === null || value === undefined) return 'n/a';
-    const sign = value > 0 ? '+' : '';
-    return `${sign}${numberLabel(value, digits)}${suffix}`;
-  }
-
   function wholeNumberLabel(value: number) {
     return value.toLocaleString('en-US', { maximumFractionDigits: 0 });
   }
@@ -843,19 +568,6 @@
 
   function minutesLabel(value: number) {
     return `${value.toFixed(0)}m`;
-  }
-
-  function clockValue(value: number | null | undefined) {
-    return value === null || value === undefined ? 'n/a' : clockLabel(value);
-  }
-
-  function titleLabel(value: string | null | undefined) {
-    if (!value) return 'n/a';
-    return value
-      .replace(/[_-]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .replace(/\b\w/g, (letter) => letter.toUpperCase());
   }
 
   function toggleDataHelp() {
@@ -983,24 +695,8 @@
     <header class="topbar">
       <div>
         <p class="eyebrow">Oura Ring CSV export</p>
-        <h1>{dashboardMode === 'daily' ? 'Daily dashboard' : `${currentSection.label} dashboard`}</h1>
-        <div class="range-row">
-          <p class="range">
-            {#if dashboardMode === 'daily'}
-              {selectedDayTitle} · {selectedDayPosition}
-            {:else}
-              {summary.range.start ? compactDate(summary.range.start) : 'n/a'} to {summary.range.end ? compactDate(summary.range.end) : 'n/a'}
-            {/if}
-          </p>
-          <button
-            type="button"
-            class="daily-data-button"
-            on:click={toggleDailyDashboard}
-          >
-            <CalendarDays size={15} strokeWidth={2.4} />
-            <span>{dashboardMode === 'daily' ? 'View over time' : 'View daily data'}</span>
-          </button>
-        </div>
+        <h1>{currentSection.label} dashboard</h1>
+        <p class="range">{summary.range.start ? compactDate(summary.range.start) : 'n/a'} to {summary.range.end ? compactDate(summary.range.end) : 'n/a'}</p>
       </div>
 
       <div class="topbar-controls">
@@ -1033,7 +729,6 @@
       <strong class:error={uploadState === 'error'}>{uploadMessage}</strong>
     </button>
 
-    {#if dashboardMode === 'overtime'}
     <section class="metric-grid" aria-label="Summary metrics">
       <MetricCard label="Sleep score" value={numberLabel(averages.sleepScore, 0)} detail={`${durationLabel(averages.totalSleepHours)} avg sleep`} accent={chartColors.blue} />
       <MetricCard label="Readiness" value={numberLabel(averages.readinessScore, 0)} detail={`${numberLabel(averages.averageHrv, 0)} ms avg HRV`} accent={chartColors.violet} />
@@ -1182,100 +877,8 @@
           <InsightPanel title="Oxygen readout" insights={summary.insights.oxygen} />
         </div>
       {/if}
+
     </section>
-    {:else if selectedDay}
-    <section class="daily-dashboard" aria-label="Daily health dashboard">
-      <div class="daily-toolbar">
-        <div>
-          <p class="eyebrow">Daily detail</p>
-          <h2>{selectedDayTitle}</h2>
-        </div>
-
-        <div class="day-controls" aria-label="Move between days">
-          <button type="button" class="day-nav-button" title="Previous day" aria-label="Previous day" on:click={goToPreviousDay} disabled={isFirstDailyDay}>
-            <ChevronLeft size={18} strokeWidth={2.4} />
-          </button>
-          <label class="day-select">
-            <CalendarDays size={17} strokeWidth={2.3} aria-hidden="true" />
-            <span class="visually-hidden">Select day</span>
-            <select value={selectedDayDate} on:change={handleDailySelect}>
-              {#each daily as day}
-                <option value={day.day}>{fullDate(day.day)}</option>
-              {/each}
-            </select>
-          </label>
-          <button type="button" class="day-nav-button" title="Next day" aria-label="Next day" on:click={goToNextDay} disabled={isLastDailyDay}>
-            <ChevronRight size={18} strokeWidth={2.4} />
-          </button>
-        </div>
-      </div>
-
-      <section class="daily-score-grid" aria-label="Daily scores">
-        {#each dailyScores as score}
-          <DailyScoreRing label={score.label} value={score.value} detail={score.detail} accent={score.accent} />
-        {/each}
-      </section>
-
-      <section class="metric-grid daily-metric-grid" aria-label="Daily key metrics">
-        {#each dailyHeroMetrics as metric}
-          <MetricCard label={metric.label} value={metric.value} detail={metric.detail} accent={metric.accent} />
-        {/each}
-      </section>
-
-      {#if dailySleepStages.length}
-        <section class="daily-panel sleep-stage-panel" aria-label="Sleep stage breakdown">
-          <div class="daily-panel-heading">
-            <div>
-              <p class="eyebrow">Sleep contributors</p>
-              <h3>Sleep stage balance</h3>
-            </div>
-            <span>{durationLabel(selectedDay.totalSleepHours)} total sleep</span>
-          </div>
-          <div class="sleep-stage-list">
-            {#each dailySleepStages as stage}
-              <div class="sleep-stage-row" style={`--stage-color: ${stage.accent}; --stage-percent: ${stage.percent}%`}>
-                <div>
-                  <strong>{stage.label}</strong>
-                  <span>{stage.detail}</span>
-                </div>
-                <b>{stage.value}</b>
-                <div class="stage-track" aria-hidden="true"><span></span></div>
-              </div>
-            {/each}
-          </div>
-        </section>
-      {/if}
-
-      <section class="daily-detail-grid" aria-label="Daily detail metrics">
-        {#each dailyDetailGroups as group}
-          <article class="daily-panel">
-            <div class="daily-panel-heading">
-              <div>
-                <p class="eyebrow">{group.eyebrow}</p>
-                <h3>{group.title}</h3>
-              </div>
-            </div>
-            <div class="daily-detail-list">
-              {#each group.items as item}
-                <div class="daily-detail-item" style={`--item-accent: ${item.accent}`}>
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                  <small>{item.detail}</small>
-                </div>
-              {/each}
-            </div>
-          </article>
-        {/each}
-      </section>
-    </section>
-    {:else}
-    <section class="daily-dashboard" aria-label="Daily health dashboard">
-      <div class="empty-daily-panel">
-        <h2>No daily records</h2>
-        <p>This export loaded, but it does not include daily rows to inspect.</p>
-      </div>
-    </section>
-    {/if}
 
     <footer class="footnotes">
       <span>{summary.privacyNotes[2]}</span>
@@ -1766,42 +1369,7 @@
   .range {
     color: #596171;
     font-size: 0.95rem;
-    margin: 0;
-  }
-
-  .range-row {
-    align-items: center;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-top: 10px;
-  }
-
-  .daily-data-button {
-    align-items: center;
-    background: #ffffff;
-    border: 1px solid #d5dbe5;
-    border-radius: 8px;
-    color: #1f2937;
-    cursor: pointer;
-    display: inline-flex;
-    font-size: 0.8rem;
-    font-weight: 780;
-    gap: 6px;
-    min-height: 30px;
-    padding: 0 9px;
-    transition:
-      background 160ms ease,
-      border-color 160ms ease,
-      color 160ms ease;
-  }
-
-  .daily-data-button:hover,
-  .daily-data-button:focus-visible {
-    background: #f2f5f8;
-    border-color: #cbd3df;
-    color: #111827;
-    outline: none;
+    margin: 10px 0 0;
   }
 
   .actions {
@@ -1987,250 +1555,6 @@
     grid-row: span 3;
   }
 
-  .daily-dashboard {
-    display: grid;
-    gap: 16px;
-    margin: 18px auto 0;
-    max-width: 1420px;
-  }
-
-  .daily-toolbar,
-  .daily-panel,
-  .empty-daily-panel {
-    background: #ffffff;
-    border: 1px solid #dfe5ee;
-    border-radius: 8px;
-    box-shadow: 0 8px 28px rgba(22, 26, 33, 0.04);
-  }
-
-  .daily-toolbar {
-    align-items: center;
-    display: flex;
-    gap: 16px;
-    justify-content: space-between;
-    padding: 18px;
-  }
-
-  .daily-toolbar h2,
-  .daily-panel h3,
-  .empty-daily-panel h2 {
-    color: #161a21;
-    font-size: 1.35rem;
-    line-height: 1.15;
-    margin: 0;
-  }
-
-  .day-controls {
-    align-items: center;
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-    min-width: 0;
-  }
-
-  .day-nav-button {
-    align-items: center;
-    aspect-ratio: 1;
-    background: #ffffff;
-    border: 1px solid #d5dbe5;
-    border-radius: 8px;
-    color: #1f2937;
-    cursor: pointer;
-    display: grid;
-    height: 42px;
-    justify-items: center;
-  }
-
-  .day-nav-button:hover:not(:disabled),
-  .day-nav-button:focus-visible:not(:disabled) {
-    background: #111827;
-    border-color: #111827;
-    color: #ffffff;
-    outline: none;
-  }
-
-  .day-nav-button:disabled {
-    color: #a8b0bd;
-    cursor: not-allowed;
-  }
-
-  .day-select {
-    align-items: center;
-    background: #f8fafc;
-    border: 1px solid #d5dbe5;
-    border-radius: 8px;
-    color: #4c5665;
-    display: grid;
-    gap: 8px;
-    grid-template-columns: auto minmax(0, 1fr);
-    min-height: 42px;
-    min-width: min(300px, 48vw);
-    padding: 0 10px;
-  }
-
-  .day-select select {
-    background: transparent;
-    border: 0;
-    color: #1f2937;
-    font-weight: 760;
-    min-height: 40px;
-    min-width: 0;
-    width: 100%;
-  }
-
-  .day-select select:focus-visible {
-    outline: none;
-  }
-
-  .daily-score-grid {
-    display: grid;
-    gap: 12px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .daily-metric-grid {
-    margin: 0;
-    max-width: none;
-  }
-
-  .daily-panel {
-    min-width: 0;
-    padding: 16px;
-  }
-
-  .daily-panel-heading {
-    align-items: start;
-    border-bottom: 1px solid #e6ebf2;
-    display: flex;
-    gap: 14px;
-    justify-content: space-between;
-    padding-bottom: 13px;
-  }
-
-  .daily-panel-heading > span {
-    background: #f2f5f8;
-    border: 1px solid #e2e7ee;
-    border-radius: 999px;
-    color: #4c5665;
-    flex: 0 0 auto;
-    font-size: 0.78rem;
-    font-weight: 720;
-    padding: 7px 10px;
-  }
-
-  .sleep-stage-list {
-    display: grid;
-    gap: 12px;
-    margin-top: 14px;
-  }
-
-  .sleep-stage-row {
-    align-items: center;
-    display: grid;
-    gap: 7px 14px;
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .sleep-stage-row strong,
-  .sleep-stage-row span,
-  .sleep-stage-row b {
-    display: block;
-  }
-
-  .sleep-stage-row strong {
-    color: #1f2937;
-    font-size: 0.93rem;
-  }
-
-  .sleep-stage-row span {
-    color: #687386;
-    font-size: 0.82rem;
-    margin-top: 2px;
-  }
-
-  .sleep-stage-row b {
-    color: #161a21;
-    font-size: 0.98rem;
-    white-space: nowrap;
-  }
-
-  .stage-track {
-    background: #edf1f6;
-    border-radius: 999px;
-    grid-column: 1 / -1;
-    height: 9px;
-    overflow: hidden;
-  }
-
-  .stage-track span {
-    background: var(--stage-color);
-    border-radius: inherit;
-    display: block;
-    height: 100%;
-    min-width: 3px;
-    width: var(--stage-percent);
-  }
-
-  .daily-detail-grid {
-    display: grid;
-    gap: 16px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .daily-detail-list {
-    display: grid;
-    gap: 10px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    margin-top: 14px;
-  }
-
-  .daily-detail-item {
-    background: #fbfcfe;
-    border: 1px solid #e4e9f1;
-    border-left: 4px solid var(--item-accent);
-    border-radius: 8px;
-    min-width: 0;
-    padding: 10px 11px;
-  }
-
-  .daily-detail-item span,
-  .daily-detail-item strong,
-  .daily-detail-item small {
-    display: block;
-    min-width: 0;
-  }
-
-  .daily-detail-item span {
-    color: #687386;
-    font-size: 0.73rem;
-    font-weight: 780;
-    text-transform: uppercase;
-  }
-
-  .daily-detail-item strong {
-    color: #161a21;
-    font-size: 1.05rem;
-    line-height: 1.18;
-    margin-top: 6px;
-    overflow-wrap: anywhere;
-  }
-
-  .daily-detail-item small {
-    color: #596171;
-    font-size: 0.78rem;
-    line-height: 1.35;
-    margin-top: 5px;
-  }
-
-  .empty-daily-panel {
-    padding: 22px;
-  }
-
-  .empty-daily-panel p {
-    color: #596171;
-    margin: 8px 0 0;
-  }
-
   .footnotes {
     color: #6b7280;
     display: flex;
@@ -2310,10 +1634,6 @@
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
-    .daily-detail-grid {
-      grid-template-columns: 1fr;
-    }
-
     .content-grid {
       grid-template-columns: 1fr;
     }
@@ -2360,7 +1680,6 @@
     }
 
     .topbar,
-    .daily-toolbar,
     .section-heading,
     .status-band {
       align-items: stretch;
@@ -2372,13 +1691,8 @@
     }
 
     .actions,
-    .day-controls,
     .pill-row {
       justify-content: flex-start;
-    }
-
-    .daily-score-grid {
-      grid-template-columns: 1fr;
     }
 
     .metric-grid {
@@ -2407,27 +1721,13 @@
     }
 
     .topbar-controls,
-    .actions,
-    .day-controls {
+    .actions {
       width: 100%;
     }
 
     .upload-button {
       flex: 1 1 0;
       justify-content: center;
-    }
-
-    .day-select {
-      flex: 1 1 auto;
-      min-width: 0;
-    }
-
-    .daily-panel-heading {
-      flex-direction: column;
-    }
-
-    .daily-detail-list {
-      grid-template-columns: 1fr;
     }
 
     h1 {
