@@ -154,6 +154,7 @@ export async function parseOuraZip(input: ArrayBuffer | Uint8Array, options: Par
     daily.mediumActivityHours = hours(row.medium_activity_time);
     daily.highActivityHours = hours(row.high_activity_time);
     daily.sedentaryHours = hours(row.sedentary_time);
+    daily.restingHours = hours(row.resting_time);
   }
 
   for (const row of data['dailystress.csv']) {
@@ -249,8 +250,8 @@ export async function parseOuraZip(input: ArrayBuffer | Uint8Array, options: Par
     distributions: {
       sleepHeartRate: histogram(sleepHeartRates, 2),
       sleepHrv: histogram(sleepHrvs, 5),
-      awakeHeartRate: histogram(heartRateBySource.awake, 5),
-      workoutHeartRate: histogram(heartRateBySource.workout, 5),
+      awakeHeartRate: histogram(heartRateBySource.awake, 2),
+      workoutHeartRate: histogram(heartRateBySource.workout, 2),
       restHeartRate: histogram(heartRateBySource.rest, 5),
       daytimeStress: histogram(daytimeStressScores, 10, 0, 100)
     },
@@ -376,6 +377,7 @@ function buildAverages(daily: DailyMetric[]) {
     steps: average(daily.map((day) => day.steps)),
     activeCalories: average(daily.map((day) => day.activeCalories)),
     totalCalories: average(daily.map((day) => day.totalCalories)),
+    restingHours: average(daily.map((day) => day.restingHours)),
     stressHighHours: average(daily.map((day) => day.stressHighHours)),
     recoveryHighHours: average(daily.map((day) => day.recoveryHighHours)),
     spo2: average(daily.map((day) => day.spo2)),

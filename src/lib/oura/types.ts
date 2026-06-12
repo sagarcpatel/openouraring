@@ -26,6 +26,7 @@ export type DailyMetric = {
   mediumActivityHours?: number | null;
   highActivityHours?: number | null;
   sedentaryHours?: number | null;
+  restingHours?: number | null;
   stressHighHours?: number | null;
   recoveryHighHours?: number | null;
   stressSummary?: string | null;
@@ -69,6 +70,7 @@ export type OuraAverages = {
   steps?: number | null;
   activeCalories?: number | null;
   totalCalories?: number | null;
+  restingHours?: number | null;
   stressHighHours?: number | null;
   recoveryHighHours?: number | null;
   spo2?: number | null;

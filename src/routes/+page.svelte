@@ -17,7 +17,7 @@
   import InsightPanel from '$lib/components/InsightPanel.svelte';
   import LineChart from '$lib/components/LineChart.svelte';
   import MetricCard from '$lib/components/MetricCard.svelte';
-  import StackedBars from '$lib/components/StackedBars.svelte';
+  import StateHeatmap from '$lib/components/StateHeatmap.svelte';
   import demoSummary from '$lib/data/demo-summary.json';
   import type { DailyMetric, OuraSummary, SectionKey } from '$lib/oura/types';
 
@@ -30,6 +30,7 @@
     pointRadius?: number;
     showInLegend?: boolean;
     showPoints?: 'always' | 'hover' | false;
+    strokeDasharray?: string;
     strokeWidth?: number;
     tooltipOnly?: boolean;
   };
@@ -57,11 +58,21 @@
     cyan: '#0891b2',
     green: '#0f9f6e',
     amber: '#b45309',
+    orange: '#f97316',
     rose: '#e11d48',
+    pink: '#db2777',
     violet: '#7c3aed',
     gray: '#64748b',
     ink: '#111827'
   };
+
+  const stressSummaryStyles = {
+    restored: { label: 'Restored', color: '#2563eb' },
+    normal: { label: 'Normal', color: '#0f9f6e' },
+    stressful: { label: 'Stressful', color: '#b45309' },
+    high: { label: 'High', color: '#e11d48' }
+  };
+  const stressSummaryKeys = ['restored', 'normal', 'stressful', 'high'] as const;
 
   let summary: OuraSummary = demoSummary as OuraSummary;
   let activeSection: SectionKey = 'sleep';
@@ -117,55 +128,60 @@
   ];
 
   $: heartSeries = [
-    seriesFor('averageHeartRate', 'Night avg HR', chartColors.rose),
-    seriesFor('lowestHeartRate', 'Night low HR', chartColors.gray)
+    ...rawMovingAverageAverageSeries('averageHeartRate', 'Average HR', chartColors.rose, (value) => `${value.toFixed(1)} bpm`),
+    ...rawMovingAverageAverageSeries('lowestHeartRate', 'Lowest HR', chartColors.blue, (value) => `${value.toFixed(1)} bpm`)
   ];
-  $: hrvSeries = [seriesFor('averageHrv', 'HRV', chartColors.blue)];
+  $: hrvSeries = rawMovingAverageAverageSeries('averageHrv', 'HRV', chartColors.blue, (value) => `${value.toFixed(1)} ms`);
   $: daytimeHeartSeries = [
-    seriesFor('awakeHeartRate', 'Awake HR', chartColors.cyan),
-    seriesFor('workoutHeartRate', 'Workout HR', chartColors.rose),
-    seriesFor('restHeartRate', 'Rest HR', chartColors.green)
+    ...rawMovingAverageAverageSeries('awakeHeartRate', 'Awake', chartColors.orange, (value) => `${value.toFixed(1)} bpm`),
+    ...rawMovingAverageAverageSeries('restHeartRate', 'Rest', chartColors.green, (value) => `${value.toFixed(1)} bpm`),
+    ...rawMovingAverageAverageSeries('workoutHeartRate', 'Workout', chartColors.rose, (value) => `${value.toFixed(1)} bpm`)
   ];
-  $: cardioSeries = [
-    seriesFor('vascularAge', 'Vascular age', chartColors.amber),
-    seriesFor('vo2Max', 'VO2 max', chartColors.green)
-  ];
+  $: vascularAgeSeries = rawMovingAverageAverageSeries('vascularAge', 'Vascular age', chartColors.pink, (value) => value.toFixed(1));
 
-  $: stepSeries = [
-    seriesFor('steps', 'Steps', chartColors.green),
-    rollingSeries('steps', '7-day avg', chartColors.ink)
-  ];
+  $: stepSeries = rawMovingAverageAverageSeries('steps', 'Steps', chartColors.green, (value) =>
+    value.toLocaleString('en-US', { maximumFractionDigits: 0 })
+  );
   $: calorieSeries = [
-    seriesFor('activeCalories', 'Active calories', chartColors.green),
-    seriesFor('totalCalories', 'Total calories', chartColors.amber)
+    ...rawMovingAverageAverageSeries('activeCalories', 'Active calories', chartColors.rose, (value) =>
+      value.toLocaleString('en-US', { maximumFractionDigits: 0 })
+    ),
+    ...rawMovingAverageAverageSeries('totalCalories', 'Total calories', chartColors.amber, (value) =>
+      value.toLocaleString('en-US', { maximumFractionDigits: 0 })
+    )
   ];
-  $: activityRows = daily.map((day) => ({
-    x: day.day,
-    parts: [
-      { label: 'Low', value: day.lowActivityHours, color: '#9ac6a4' },
-      { label: 'Medium', value: day.mediumActivityHours, color: chartColors.green },
-      { label: 'High', value: day.highActivityHours, color: chartColors.rose },
-      { label: 'Sedentary', value: day.sedentaryHours, color: '#cbd5e1' }
-    ]
-  }));
+  $: activityTimeSeries = [
+    ...rawMovingAverageAverageSeries('highActivityHours', 'High', chartColors.rose, (value) => `${value.toFixed(1)}h`),
+    ...rawMovingAverageAverageSeries('mediumActivityHours', 'Medium', chartColors.amber, (value) => `${value.toFixed(1)}h`),
+    ...rawMovingAverageAverageSeries('lowActivityHours', 'Low', chartColors.blue, (value) => `${value.toFixed(1)}h`),
+    ...rawMovingAverageAverageSeries('sedentaryHours', 'Sedentary', chartColors.violet, (value) => `${value.toFixed(1)}h`),
+    ...rawMovingAverageAverageSeries('restingHours', 'Resting', chartColors.gray, (value) => `${value.toFixed(1)}h`)
+  ];
 
   $: stressSeries = [
-    seriesFor('stressHighHours', 'Stress', chartColors.rose),
-    seriesFor('recoveryHighHours', 'Recovery', chartColors.green)
+    ...rawMovingAverageAverageSeries('stressHighHours', 'Stress', chartColors.rose, (value) => `${value.toFixed(1)}h`),
+    ...rawMovingAverageAverageSeries('recoveryHighHours', 'Recovery', chartColors.green, (value) => `${value.toFixed(1)}h`)
   ];
-  $: stressRows = daily.map((day) => ({
+  $: stressSummaryPoints = daily.map((day) => ({
     x: day.day,
-    parts: [
-      { label: 'Stress', value: day.stressHighHours, color: chartColors.rose },
-      { label: 'Recovery', value: day.recoveryHighHours, color: chartColors.green }
-    ]
+    state: day.stressSummary
   }));
+  $: stressSummaryTrendSeries = rollingStressSummarySeries();
 
-  $: oxygenSeries = [
-    seriesFor('spo2', 'SpO2', chartColors.cyan),
-    seriesFor('breathingDisturbanceIndex', 'BDI', chartColors.amber)
+  $: spo2Series = rawMovingAverageAverageSeries('spo2', 'SpO2', chartColors.cyan, (value) => `${value.toFixed(1)}%`);
+  $: breathingDisturbanceSeries = rawMovingAverageAverageSeries('breathingDisturbanceIndex', 'BDI', chartColors.cyan, (value) =>
+    value.toFixed(1)
+  );
+  $: breathSeries = rawMovingAverageAverageSeries('averageBreath', 'Breath rate', chartColors.cyan, (value) => `${value.toFixed(1)}/min`);
+  $: spo2Bands = [
+    { from: 85, to: 90, color: '#fee2e2' },
+    { from: 90, to: 95, color: '#fef3c7' },
+    { from: 95, to: 100, color: '#dcfce7' }
   ];
-  $: breathSeries = [seriesFor('averageBreath', 'Breath rate', chartColors.cyan)];
+  $: breathingDisturbanceBands = [
+    { from: 0, to: 5, color: '#dcfce7' },
+    { from: 5, to: 10, color: '#fef3c7' }
+  ];
 
   async function loadStoredDataset() {
     if (!storedUserId || !storedUploadId) return;
@@ -275,6 +291,67 @@
         strokeWidth: 3.6
       }
     ];
+  }
+
+  function rawMovingAverageAverageSeries(
+    key: keyof DailyMetric,
+    label: string,
+    color: string,
+    labelFormatter: (value: number) => string = (value) => value.toFixed(1)
+  ): ChartSeries[] {
+    const avg = averageForKey(key);
+    return [
+      {
+        ...seriesFor(key, `${label} (raw)`, color),
+        opacity: 0.3,
+        pointOpacity: 0.45,
+        pointRadius: 2,
+        showPoints: 'always',
+        strokeWidth: 1.2
+      },
+      {
+        ...rollingSeries(key, `${label} (7-day MA)`, color),
+        strokeWidth: 3.7
+      },
+      averageLineSeries(key, `Avg ${label}: ${avg === null ? 'n/a' : labelFormatter(avg)}`, color)
+    ];
+  }
+
+  function averageLineSeries(key: keyof DailyMetric, label: string, color: string): ChartSeries {
+    const y = averageForKey(key);
+    return {
+      label,
+      color,
+      opacity: 0.72,
+      showPoints: false,
+      strokeDasharray: '6 4',
+      strokeWidth: 1.6,
+      values: daily.map((day) => ({
+        x: day.day,
+        y
+      }))
+    };
+  }
+
+  function averageForKey(key: keyof DailyMetric) {
+    return average(daily.map((day) => numeric(day[key])));
+  }
+
+  function rollingStressSummarySeries(): ChartSeries[] {
+    return stressSummaryKeys.map((key) => ({
+      label: stressSummaryStyles[key].label,
+      color: stressSummaryStyles[key].color,
+      showPoints: 'hover',
+      strokeWidth: 2.6,
+      values: daily.map((day, index) => {
+        const window = daily.slice(Math.max(0, index - 6), index + 1);
+        const count = window.filter((entry) => entry.stressSummary === key).length;
+        return {
+          x: day.day,
+          y: window.length ? (count / window.length) * 100 : null
+        };
+      })
+    }));
   }
 
   function maxForKey(key: keyof DailyMetric, minimum: number, interval: number) {
@@ -466,10 +543,13 @@
       {:else if activeSection === 'heart'}
         <div class="content-grid">
           <div class="panel wide">
-            <LineChart title="Sleeping heart rate" series={heartSeries} yFormatter={(value) => `${value.toFixed(0)} bpm`} xFormatter={compactDate} />
+            <LineChart title="Vascular age over time" series={vascularAgeSeries} yFormatter={(value) => value.toFixed(0)} xFormatter={compactDate} minY={15} maxY={35} />
+          </div>
+          <div class="panel wide">
+            <LineChart title="Heart rate during sleep" series={heartSeries} yFormatter={(value) => `${value.toFixed(0)} bpm`} xFormatter={compactDate} />
           </div>
           <div class="panel">
-            <LineChart title="Nightly HRV" series={hrvSeries} yFormatter={(value) => `${value.toFixed(0)} ms`} xFormatter={compactDate} minY={0} />
+            <LineChart title="Average HRV during sleep" series={hrvSeries} yFormatter={(value) => `${value.toFixed(0)} ms`} xFormatter={compactDate} minY={0} />
           </div>
           <div class="panel">
             <Histogram title="Sleep HR distribution" bins={summary.distributions.sleepHeartRate} color={chartColors.rose} unit=" bpm" />
@@ -478,23 +558,26 @@
             <Histogram title="Sleep HRV distribution" bins={summary.distributions.sleepHrv} color={chartColors.blue} unit=" ms" />
           </div>
           <div class="panel wide">
-            <LineChart title="Awake, workout, and rest HR" series={daytimeHeartSeries} yFormatter={(value) => `${value.toFixed(0)} bpm`} xFormatter={compactDate} />
+            <LineChart title="Heart rate over time (daily averages)" series={daytimeHeartSeries} yFormatter={(value) => `${value.toFixed(0)} bpm`} xFormatter={compactDate} />
           </div>
           <div class="panel">
-            <LineChart title="Cardio anchors" series={cardioSeries} yFormatter={(value) => value.toFixed(0)} xFormatter={compactDate} />
+            <Histogram title="Awake HR distribution" bins={summary.distributions.awakeHeartRate} color={chartColors.orange} unit=" bpm" />
+          </div>
+          <div class="panel">
+            <Histogram title="Workout HR distribution" bins={summary.distributions.workoutHeartRate} color={chartColors.rose} unit=" bpm" />
           </div>
           <InsightPanel title="Heart readout" insights={summary.insights.heart} />
         </div>
       {:else if activeSection === 'activity'}
         <div class="content-grid">
           <div class="panel wide">
-            <LineChart title="Steps with 7-day average" series={stepSeries} yFormatter={(value) => value.toLocaleString()} xFormatter={compactDate} minY={0} />
+            <LineChart title="Daily steps" series={stepSeries} yFormatter={(value) => value.toLocaleString()} xFormatter={compactDate} minY={0} />
           </div>
           <div class="panel">
-            <LineChart title="Calories" series={calorieSeries} yFormatter={(value) => value.toFixed(0)} xFormatter={compactDate} minY={0} />
+            <LineChart title="Calories (active vs total, 7-day MA)" series={calorieSeries} yFormatter={(value) => value.toFixed(0)} xFormatter={compactDate} minY={0} />
           </div>
           <div class="panel wide">
-            <StackedBars title="Activity time breakdown" rows={activityRows} unit="h" xFormatter={compactDate} valueFormatter={durationLabel} />
+            <LineChart title="Activity time breakdown (hours, 7-day MA)" series={activityTimeSeries} yFormatter={(value) => `${value.toFixed(1)}h`} xFormatter={compactDate} minY={0} />
           </div>
           <InsightPanel title="Activity readout" insights={summary.insights.activity} />
         </div>
@@ -504,17 +587,43 @@
             <LineChart title="Stress and recovery time" series={stressSeries} yFormatter={(value) => `${value.toFixed(1)}h`} xFormatter={compactDate} minY={0} />
           </div>
           <div class="panel">
-            <StackedBars title="Daily time in state" rows={stressRows} unit="h" xFormatter={compactDate} valueFormatter={durationLabel} />
+            <StateHeatmap title="Daily stress summary" points={stressSummaryPoints} styles={stressSummaryStyles} xFormatter={compactDate} />
           </div>
           <div class="panel">
-            <Histogram title="Daytime stress score distribution" bins={summary.distributions.daytimeStress} color={chartColors.amber} />
+            <LineChart
+              title="Rolling 7-day stress distribution"
+              series={stressSummaryTrendSeries}
+              yFormatter={(value) => `${value.toFixed(0)}%`}
+              xFormatter={compactDate}
+              minY={0}
+              maxY={100}
+            />
           </div>
           <InsightPanel title="Stress readout" insights={summary.insights.stress} />
         </div>
       {:else}
         <div class="content-grid">
-          <div class="panel wide">
-            <LineChart title="SpO2 and breathing disturbance" series={oxygenSeries} yFormatter={(value) => value.toFixed(1)} xFormatter={compactDate} />
+          <div class="panel">
+            <LineChart
+              title="Average SpO2 %"
+              series={spo2Series}
+              yFormatter={(value) => `${value.toFixed(1)}%`}
+              xFormatter={compactDate}
+              minY={85}
+              maxY={100}
+              backgroundBands={spo2Bands}
+            />
+          </div>
+          <div class="panel">
+            <LineChart
+              title="Breathing disturbance index"
+              series={breathingDisturbanceSeries}
+              yFormatter={(value) => value.toFixed(1)}
+              xFormatter={compactDate}
+              minY={0}
+              maxY={10}
+              backgroundBands={breathingDisturbanceBands}
+            />
           </div>
           <div class="panel">
             <LineChart title="Breathing rate during sleep" series={breathSeries} yFormatter={(value) => `${value.toFixed(1)}/min`} xFormatter={compactDate} />

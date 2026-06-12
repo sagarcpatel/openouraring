@@ -13,6 +13,7 @@
     pointRadius?: number;
     showInLegend?: boolean;
     showPoints?: 'always' | 'hover' | false;
+    strokeDasharray?: string;
     strokeWidth?: number;
     tooltipOnly?: boolean;
   };
@@ -284,6 +285,7 @@
           d={linePath(line.values)}
           stroke={line.color}
           stroke-width={line.strokeWidth ?? 3}
+          stroke-dasharray={line.strokeDasharray ?? undefined}
           opacity={line.opacity ?? 1}
         />
       {/each}
