@@ -115,11 +115,11 @@ export type OuraSummary = {
   };
   filesFound: string[];
   storage?: {
-    userId: string;
-    uploadId: string;
-    rawZipKey: string;
-    summaryKey: string;
-    uploadedAt: string;
+    kind: 'browser';
+    datasetId: string;
+    sourceName: string;
+    sizeBytes: number;
+    savedAt: string;
   };
   privacyNotes: string[];
 };

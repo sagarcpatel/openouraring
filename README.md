@@ -1,6 +1,6 @@
 # OpenOura
 
-OpenOura is a SvelteKit dashboard for Oura Ring export ZIPs. It runs on Cloudflare Workers, stores uploaded exports in R2, and serves a normalized summary JSON for the dashboard.
+OpenOura is a SvelteKit dashboard for Oura Ring export ZIPs. It parses exports in the browser and stores the normalized dashboard summary in local browser storage.
 
 ## What It Visualizes
 
@@ -12,17 +12,9 @@ OpenOura is a SvelteKit dashboard for Oura Ring export ZIPs. It runs on Cloudfla
 
 The default dashboard uses `src/lib/data/demo-summary.json`, generated from the provided `data.zip`. The parser ignores raw location and subscription CSVs for chart analysis.
 
-## Cloudflare Storage Model
+## Browser Storage Model
 
-Uploads are stored in R2 under a per-user path:
-
-```text
-users/{userId}/exports/{uploadId}/data.zip
-users/{userId}/exports/{uploadId}/summary.json
-users/{userId}/index.json
-```
-
-The browser remembers `userId` and `uploadId` in local storage. There is no authentication layer in this prototype, so add auth before using it for production health data.
+Uploaded ZIP files are read with browser APIs and parsed locally with `jszip` and `papaparse`. The raw ZIP is not sent to the server and is not persisted by the app. The normalized `OuraSummary` used by the charts is saved in IndexedDB, and localStorage keeps only the id of the current dataset.
 
 ## Local Development
 
@@ -34,12 +26,6 @@ npm run dev
 The dev server defaults to [http://localhost:5173](http://localhost:5173).
 
 ## Cloudflare Setup
-
-Create the R2 bucket named in `wrangler.jsonc`:
-
-```bash
-wrangler r2 bucket create openoura-data
-```
 
 Generate binding types when your local Wrangler environment has permission to write its logs:
 

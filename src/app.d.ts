@@ -1,9 +1,7 @@
 declare global {
   namespace App {
     interface Platform {
-      env: {
-        OURA_DATA: R2Bucket;
-      };
+      env: Record<string, never>;
       context: ExecutionContext;
     }
   }

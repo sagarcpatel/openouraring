@@ -19,6 +19,8 @@
   import MetricCard from '$lib/components/MetricCard.svelte';
   import StateHeatmap from '$lib/components/StateHeatmap.svelte';
   import demoSummary from '$lib/data/demo-summary.json';
+  import { clearCurrentDatasetId, getCurrentDatasetId, loadLocalDataset, saveLocalDataset, setCurrentDatasetId } from '$lib/oura/browser-storage';
+  import { parseOuraZip } from '$lib/oura/parse';
   import type { DailyMetric, OuraSummary, SectionKey } from '$lib/oura/types';
 
   type ChartSeries = {
@@ -35,15 +37,7 @@
     tooltipOnly?: boolean;
   };
 
-  type ErrorPayload = {
-    error?: string;
-  };
-
-  type UploadPayload = ErrorPayload & {
-    userId?: string;
-    uploadId?: string;
-    summary?: OuraSummary;
-  };
+  const MAX_UPLOAD_BYTES = 75 * 1024 * 1024;
 
   const sections: Array<{ key: SectionKey; label: string; icon: typeof Moon; color: string }> = [
     { key: 'sleep', label: 'Sleep', icon: Moon, color: '#2563eb' },
@@ -78,15 +72,13 @@
   let activeSection: SectionKey = 'sleep';
   let uploadState: 'idle' | 'uploading' | 'done' | 'error' = 'idle';
   let uploadMessage = 'Demo export loaded';
-  let storedUserId = '';
-  let storedUploadId = '';
+  let storedDatasetId = '';
   let fileInput: HTMLInputElement;
 
   onMount(async () => {
-    storedUserId = localStorage.getItem('openoura:userId') ?? '';
-    storedUploadId = localStorage.getItem('openoura:uploadId') ?? '';
+    storedDatasetId = getCurrentDatasetId();
 
-    if (storedUserId && storedUploadId) {
+    if (storedDatasetId) {
       await loadStoredDataset();
     }
   });
@@ -95,7 +87,7 @@
   $: averages = summary.averages;
   $: currentSection = sections.find((section) => section.key === activeSection) ?? sections[0];
   $: storagePath = summary.storage
-    ? `r2://${summary.storage.rawZipKey.replace('/data.zip', '/')}`
+    ? `browser:indexeddb://${summary.storage.datasetId}/${summary.storage.sourceName}`
     : 'demo:data.zip summary';
 
   $: sleepDurationSeries = [
@@ -184,54 +176,67 @@
   ];
 
   async function loadStoredDataset() {
-    if (!storedUserId || !storedUploadId) return;
+    if (!storedDatasetId) return;
 
     try {
       uploadState = 'uploading';
-      uploadMessage = 'Loading stored export';
-      const response = await fetch(`/api/dataset?userId=${storedUserId}&uploadId=${storedUploadId}`);
-      const payload = (await response.json()) as ErrorPayload & Partial<OuraSummary>;
-      if (!response.ok) throw new Error(payload.error ?? 'Dataset could not be loaded.');
-      summary = payload as OuraSummary;
+      uploadMessage = 'Loading local export';
+      const dataset = await loadLocalDataset(storedDatasetId);
+      if (!dataset) throw new Error('Saved export was not found in this browser.');
+      summary = dataset.summary;
       uploadState = 'done';
-      uploadMessage = 'Stored export loaded';
+      uploadMessage = 'Local export loaded';
     } catch (error) {
       uploadState = 'error';
-      uploadMessage = error instanceof Error ? error.message : 'Stored export could not be loaded.';
+      uploadMessage = error instanceof Error ? error.message : 'Local export could not be loaded.';
     }
   }
 
   async function uploadFile(file: File | null | undefined) {
     if (!file) return;
     uploadState = 'uploading';
-    uploadMessage = 'Parsing export';
-
-    const form = new FormData();
-    form.append('file', file);
-    if (storedUserId) form.append('userId', storedUserId);
+    uploadMessage = 'Processing export locally';
 
     try {
-      const response = await fetch('/api/upload', { method: 'POST', body: form });
-      const payload = (await response.json()) as UploadPayload;
-      if (!response.ok) throw new Error(payload.error ?? 'Upload failed.');
-      if (!payload.summary || !payload.userId || !payload.uploadId) {
-        throw new Error('Upload response was incomplete.');
+      if (!file.name.toLowerCase().endsWith('.zip')) {
+        throw new Error('Only .zip Oura exports are supported.');
+      }
+      if (file.size > MAX_UPLOAD_BYTES) {
+        throw new Error('Upload is too large. Keep Oura exports under 75 MB.');
       }
 
-      summary = payload.summary;
-      storedUserId = payload.userId;
-      storedUploadId = payload.uploadId;
+      const bytes = await file.arrayBuffer();
+      const parsedSummary = await parseOuraZip(bytes, { sourceName: file.name });
+      const datasetId = crypto.randomUUID();
+      const savedAt = new Date().toISOString();
+
+      parsedSummary.storage = {
+        kind: 'browser',
+        datasetId,
+        sourceName: file.name,
+        sizeBytes: file.size,
+        savedAt
+      };
+
+      await saveLocalDataset({
+        id: datasetId,
+        savedAt,
+        sourceName: file.name,
+        sizeBytes: file.size,
+        summary: parsedSummary
+      });
 
       if (browser) {
-        localStorage.setItem('openoura:userId', storedUserId);
-        localStorage.setItem('openoura:uploadId', storedUploadId);
+        setCurrentDatasetId(datasetId);
       }
 
+      summary = parsedSummary;
+      storedDatasetId = datasetId;
       uploadState = 'done';
-      uploadMessage = 'Export stored in R2';
+      uploadMessage = 'Export processed and saved locally';
     } catch (error) {
       uploadState = 'error';
-      uploadMessage = error instanceof Error ? error.message : 'Upload failed.';
+      uploadMessage = error instanceof Error ? error.message : 'Local processing failed.';
     } finally {
       if (fileInput) fileInput.value = '';
     }
@@ -239,6 +244,8 @@
 
   function resetDemo() {
     summary = demoSummary as OuraSummary;
+    storedDatasetId = '';
+    if (browser) clearCurrentDatasetId();
     uploadState = 'idle';
     uploadMessage = 'Demo export loaded';
   }
@@ -456,7 +463,7 @@
         </button>
         <button type="button" class="upload-button" on:click={() => fileInput.click()} disabled={uploadState === 'uploading'}>
           <UploadCloud size={18} />
-          <span>{uploadState === 'uploading' ? 'Uploading' : 'Upload data.zip'}</span>
+          <span>{uploadState === 'uploading' ? 'Processing' : 'Upload data.zip'}</span>
         </button>
         <input
           bind:this={fileInput}

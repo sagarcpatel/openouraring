@@ -266,7 +266,7 @@ export async function parseOuraZip(input: ArrayBuffer | Uint8Array, options: Par
     filesFound,
     privacyNotes: [
       'Dashboard analysis ignores raw location and subscription CSVs.',
-      'Uploaded ZIP files are stored in R2 for the owning user path; chart data is served from a normalized summary JSON.',
+      'Oura ZIP files are parsed in your browser; normalized chart data can be saved to local browser storage.',
       'This app is for personal trend exploration and is not medical advice.'
     ]
   };
