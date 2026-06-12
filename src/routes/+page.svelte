@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import {
     Activity,
+    CircleQuestionMark,
     Database,
     Footprints,
     HeartPulse,
@@ -46,6 +47,7 @@
     strokeWidth?: number;
     tooltipOnly?: boolean;
   };
+  type UploadInfoKey = 'privacy' | 'export';
 
   const MAX_UPLOAD_BYTES = 75 * 1024 * 1024;
   const chartDataKeys: Array<keyof DailyMetric> = [
@@ -114,6 +116,7 @@
   let uploadState: 'idle' | 'uploading' | 'revealing' | 'done' | 'error' = 'idle';
   let uploadMessage = '';
   let storedDatasetId = '';
+  let activeUploadInfo: UploadInfoKey | null = null;
   let fileInput: HTMLInputElement;
 
   onMount(async () => {
@@ -520,6 +523,10 @@
   function minutesLabel(value: number) {
     return `${value.toFixed(0)}m`;
   }
+
+  function toggleUploadInfo(info: UploadInfoKey) {
+    activeUploadInfo = activeUploadInfo === info ? null : info;
+  }
 </script>
 
 <svelte:head>
@@ -549,13 +556,57 @@
         <UploadCloud size={20} />
         <span>{uploadState === 'uploading' ? 'Processing data.zip' : 'Choose data.zip export'}</span>
       </button>
-      <div class="privacy-note" aria-label="Privacy note">
-        <div class="privacy-note-icon"><ShieldCheck size={22} strokeWidth={2.3} /></div>
-        <div class="privacy-note-copy">
-          <strong>Private by design</strong>
-          <p>All data processing happens locally in your browser. Your ZIP is never sent to a server or stored by OpenOura.</p>
-        </div>
+      <div class="upload-info-actions" aria-label="More information">
+        <button
+          type="button"
+          class="upload-info-button privacy"
+          class:active={activeUploadInfo === 'privacy'}
+          title="Private by design"
+          aria-label="Private by design"
+          aria-controls="upload-info-panel"
+          aria-expanded={activeUploadInfo === 'privacy'}
+          on:click={() => toggleUploadInfo('privacy')}
+        >
+          <ShieldCheck size={22} strokeWidth={2.3} />
+        </button>
+        <button
+          type="button"
+          class="upload-info-button export"
+          class:active={activeUploadInfo === 'export'}
+          title="Need your Oura data?"
+          aria-label="Need your Oura data?"
+          aria-controls="upload-info-panel"
+          aria-expanded={activeUploadInfo === 'export'}
+          on:click={() => toggleUploadInfo('export')}
+        >
+          <CircleQuestionMark size={22} strokeWidth={2.3} />
+        </button>
       </div>
+      {#if activeUploadInfo}
+        {#key activeUploadInfo}
+          <div
+            id="upload-info-panel"
+            class="upload-info-panel"
+            class:export-info={activeUploadInfo === 'export'}
+            role="region"
+            aria-label={activeUploadInfo === 'privacy' ? 'Private by design' : 'Need your Oura data?'}
+            aria-live="polite"
+          >
+            {#if activeUploadInfo === 'privacy'}
+              <strong>Private by design</strong>
+              <p>All data processing happens locally in your browser. Your ZIP is never sent to a server or stored by OpenOura.</p>
+            {:else}
+              <strong>Need your Oura data?</strong>
+              <p>
+                Visit
+                <a href="https://membership.ouraring.com/data-export" target="_blank" rel="noreferrer">Oura's data export page</a>
+                and log into your account to request a ZIP of CSV data from your ring. You can export even without a paid subscription;
+                requests can take over 48 hours to complete.
+              </p>
+            {/if}
+          </div>
+        {/key}
+      {/if}
       {#if uploadState === 'error'}
         <p class="upload-error">{uploadMessage}</p>
       {/if}
@@ -931,51 +982,140 @@
     opacity: 0.82;
   }
 
-  .privacy-note {
+  .upload-info-actions {
     align-items: center;
-    background: rgba(255, 255, 255, 0.78);
+    background: rgba(255, 255, 255, 0.68);
     border: 1px solid rgba(203, 213, 225, 0.86);
+    border-radius: 999px;
+    box-shadow:
+      0 18px 48px rgba(15, 23, 42, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.88);
+    display: inline-flex;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .upload-info-button {
+    align-items: center;
+    aspect-ratio: 1;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(203, 213, 225, 0.92);
+    border-radius: 999px;
+    color: #526072;
+    cursor: pointer;
+    display: grid;
+    height: 48px;
+    justify-items: center;
+    position: relative;
+    transition:
+      background 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease,
+      color 180ms ease,
+      transform 180ms ease;
+  }
+
+  .upload-info-button::after {
+    border: 1px solid currentColor;
+    border-radius: inherit;
+    content: "";
+    inset: -5px;
+    opacity: 0;
+    position: absolute;
+    transform: scale(0.78);
+    transition:
+      opacity 180ms ease,
+      transform 180ms ease;
+  }
+
+  .upload-info-button:hover,
+  .upload-info-button:focus-visible {
+    border-color: rgba(17, 24, 39, 0.28);
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.13);
+    color: #111827;
+    transform: translateY(-2px);
+  }
+
+  .upload-info-button.active {
+    border-color: transparent;
+    box-shadow:
+      0 16px 34px rgba(15, 23, 42, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.26);
+    color: #ffffff;
+    transform: translateY(-2px);
+  }
+
+  .upload-info-button.active::after {
+    opacity: 0.28;
+    transform: scale(1);
+  }
+
+  .upload-info-button.privacy.active {
+    background: #0f766e;
+  }
+
+  .upload-info-button.export.active {
+    background: #2563eb;
+  }
+
+  .upload-info-panel {
+    animation: uploadInfoReveal 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    background: rgba(255, 255, 255, 0.84);
+    border: 1px solid rgba(187, 247, 208, 0.9);
     border-radius: 8px;
     box-shadow:
-      0 20px 64px rgba(15, 23, 42, 0.1),
-      inset 0 1px 0 rgba(255, 255, 255, 0.88);
-    display: grid;
-    gap: 13px;
-    grid-template-columns: 42px minmax(0, 1fr);
-    margin-top: 2px;
+      0 24px 70px rgba(15, 23, 42, 0.13),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
     max-width: min(500px, calc(100vw - 48px));
-    padding: 14px;
+    padding: 16px;
+    position: relative;
     text-align: left;
+    transform-origin: top center;
   }
 
-  .privacy-note-icon {
-    align-items: center;
-    background: #ecfdf5;
-    border: 1px solid #bbf7d0;
-    border-radius: 8px;
-    color: #0f766e;
-    display: grid;
-    height: 42px;
-    justify-items: center;
-    width: 42px;
+  .upload-info-panel::before {
+    background: inherit;
+    border-left: 1px solid rgba(187, 247, 208, 0.9);
+    border-top: 1px solid rgba(187, 247, 208, 0.9);
+    content: "";
+    height: 12px;
+    left: 50%;
+    position: absolute;
+    top: -7px;
+    transform: translateX(-50%) rotate(45deg);
+    width: 12px;
   }
 
-  .privacy-note-copy {
-    min-width: 0;
+  .upload-info-panel.export-info {
+    border-color: rgba(191, 219, 254, 0.96);
   }
 
-  .privacy-note strong {
+  .upload-info-panel.export-info::before {
+    border-color: rgba(191, 219, 254, 0.96);
+  }
+
+  .upload-info-panel strong {
     color: #111827;
     display: block;
     font-size: 0.94rem;
     line-height: 1.2;
   }
 
-  .privacy-note p {
+  .upload-info-panel p {
     color: #4b5563;
     font-size: 0.86rem;
     line-height: 1.45;
     margin: 4px 0 0;
+  }
+
+  .upload-info-panel a {
+    color: #1d4ed8;
+    font-weight: 740;
+    text-decoration: none;
+  }
+
+  .upload-info-panel a:hover {
+    text-decoration: underline;
   }
 
   .upload-error {
@@ -1327,6 +1467,40 @@
       filter: blur(0);
       opacity: 1;
       transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes uploadInfoReveal {
+    0% {
+      filter: blur(8px);
+      opacity: 0;
+      transform: translateY(-10px) scale(0.94);
+    }
+
+    70% {
+      filter: blur(0);
+      opacity: 1;
+      transform: translateY(2px) scale(1.01);
+    }
+
+    100% {
+      filter: blur(0);
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .upload-info-panel,
+    .app-shell.dashboard-revealing,
+    .upload-aura span {
+      animation: none;
+    }
+
+    .choose-button,
+    .upload-info-button,
+    .upload-info-button::after {
+      transition: none;
     }
   }
 
