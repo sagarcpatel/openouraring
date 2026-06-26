@@ -2,6 +2,8 @@
 
 OpenOura is a SvelteKit dashboard for Oura Ring export ZIPs. It parses exports in the browser and stores the normalized dashboard summary in local browser storage.
 
+Try it at [oura.exosai.com](https://oura.exosai.com/).
+
 ## What It Visualizes
 
 - Sleep duration, time in bed, bedtime/wake timing, deep sleep, REM, latency, and sleep score.
@@ -11,6 +13,10 @@ OpenOura is a SvelteKit dashboard for Oura Ring export ZIPs. It parses exports i
 - SpO2, breathing disturbance index, and sleep breathing rate.
 
 The dashboard stays empty until a local Oura export is selected. The parser ignores raw location and subscription CSVs for chart analysis.
+
+## Visualization Source
+
+OpenOura's chart categories and visualization choices are adapted from Aleksa Gordic's public Oura data analysis write-up: [Analyzing my Oura Ring data](https://www.aleksagordic.com/blog/oura). The same attribution appears in the app's About page at `/about`, which links back to the source blog.
 
 ## Browser Storage Model
 
